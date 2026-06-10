@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "ManeLine-App",
+    "slug": "maneline-app",
+    "version": "1.0.0",
+    "scheme": "maneline",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.0"
+          }
+        }
+      ]
+    ],
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "ManeLine needs camera access to scan products and ingredient labels.",
+        "NSPhotoLibraryUsageDescription": "ManeLine needs photo access so you can upload product label images."
+      },
+      "bundleIdentifier": "com.elleno260.manelineapp"
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ],
+      "package": "com.elleno260.manelineapp"
+    }
+  }
+}
