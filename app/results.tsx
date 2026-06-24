@@ -18,6 +18,7 @@ import {
 } from "../services/aiService";
 
 type FilterType = "all" | "good" | "caution" | "unknown";
+type AnalysisStep = "idle" | "parsing" | "firestore" | "gemini" | "saving" | "complete" | "error";
 
 function getParamValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0];
@@ -73,7 +74,41 @@ function getRecommendationLabel(recommendation?: string) {
       return "Analyzing";
   }
 }
+function ProgressStep({
+  label,
+  active,
+  complete,
+}: {
+  label: string;
+  active: boolean;
+  complete: boolean;
+}) {
+  return (
+    <View style={styles.progressStep}>
+      <View
+        style={[
+          styles.progressDot,
+          complete && styles.progressDotComplete,
+          active && styles.progressDotActive,
+        ]}
+      >
+        <Text style={styles.progressDotText}>
+          {complete ? "✓" : active ? "•" : ""}
+        </Text>
+      </View>
 
+      <Text
+        style={[
+          styles.progressLabel,
+          complete && styles.progressLabelComplete,
+          active && styles.progressLabelActive,
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
 export default function ResultsScreen() {
   const params = useLocalSearchParams();
 
@@ -86,54 +121,63 @@ export default function ResultsScreen() {
   const [aiResult, setAiResult] = useState<AIRecommendation | null>(null);
   const [scanHistoryId, setScanHistoryId] = useState<string | null>(null);
 
-  const [loadingIngredients, setLoadingIngredients] = useState(true);
-  const [loadingAI, setLoadingAI] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<AnalysisStep>("idle");
+  const [analysisMessage, setAnalysisMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<FilterType>("all");
   const [expandedIngredients, setExpandedIngredients] = useState<string[]>([]);
   const [showRawText, setShowRawText] = useState(false);
 
   useEffect(() => {
-    async function analyzeResults() {
-      try {
-        setError("");
-        setLoadingIngredients(true);
+  async function analyzeResults() {
+    try {
+      setError("");
+      setAnalysisStep("parsing");
+      setAnalysisMessage("Reading the ingredient list...");
 
-        if (!extractedText || extractedText.trim().length === 0) {
-          setError("No ingredient text was found. Try scanning again with better lighting.");
-          return;
-        }
-
-        const enrichedResults = await enrichIngredientsFromText(extractedText);
-        setIngredients(enrichedResults);
-
-        setLoadingAI(true);
-
-        const aiResponse = await analyzeScanWithAI({
-          barcode: barcode || undefined,
-          productName: productName || undefined,
-          brand: brand || undefined,
-          rawIngredientsText: extractedText,
-          enrichedIngredients: enrichedResults,
-          scanSource: barcode ? "barcode" : "ocr",
-        });
-
-        setAiResult(aiResponse.aiResult);
-        setScanHistoryId(aiResponse.scanHistoryId);
-      } catch (err: any) {
-        console.log("Results analysis error:", err);
-        setError(
-          err?.message ||
-            "Something went wrong while analyzing this product."
-        );
-      } finally {
-        setLoadingIngredients(false);
-        setLoadingAI(false);
+      if (!extractedText || extractedText.trim().length === 0) {
+        setError("No ingredient text was found. Try scanning again with better lighting.");
+        setAnalysisStep("error");
+        return;
       }
-    }
 
-    analyzeResults();
-  }, [extractedText, productName, brand, barcode]);
+      setAnalysisStep("firestore");
+      setAnalysisMessage("Matching ingredients with ManeLine’s database...");
+
+      const enrichedResults = await enrichIngredientsFromText(extractedText);
+      setIngredients(enrichedResults);
+
+      setAnalysisStep("gemini");
+      setAnalysisMessage("Creating your personalized recommendation...");
+
+      const aiResponse = await analyzeScanWithAI({
+        barcode: barcode || undefined,
+        productName: productName || undefined,
+        brand: brand || undefined,
+        rawIngredientsText: extractedText,
+        enrichedIngredients: enrichedResults,
+        scanSource: barcode ? "barcode" : "ocr",
+      });
+
+      setAnalysisStep("saving");
+      setAnalysisMessage("Saving this scan to your history...");
+
+      setAiResult(aiResponse.aiResult);
+      setScanHistoryId(aiResponse.scanHistoryId);
+
+      setAnalysisStep("complete");
+      setAnalysisMessage("Analysis complete.");
+    } catch (err: any) {
+      console.log("Results analysis error:", err);
+      setError(
+        err?.message || "Something went wrong while analyzing this product."
+      );
+      setAnalysisStep("error");
+    }
+  }
+
+  analyzeResults();
+}, [extractedText, productName, brand, barcode]);
 
   const ingredientStats = useMemo(() => {
     const total = ingredients.length;
@@ -183,18 +227,52 @@ export default function ResultsScreen() {
     );
   }
 
-  if (loadingIngredients) {
-    return (
-      <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingTitle}>Analyzing ingredients...</Text>
-        <Text style={styles.loadingText}>
-          ManeLine is checking your scan against your ingredient database.
-        </Text>
-      </View>
-    );
-  }
+const isAnalyzing =
+  analysisStep === "parsing" ||
+  analysisStep === "firestore" ||
+  analysisStep === "gemini" ||
+  analysisStep === "saving";
 
+if (isAnalyzing) {
+    return (
+    <View style={styles.centeredContainer}>
+      <ActivityIndicator size="large" />
+
+      <Text style={styles.loadingTitle}>Analyzing your product</Text>
+      <Text style={styles.loadingText}>{analysisMessage}</Text>
+
+      <View style={styles.progressCard}>
+        <ProgressStep
+  label="Read ingredients"
+  active={analysisStep === "parsing"}
+  complete={
+    analysisStep === "firestore" ||
+    analysisStep === "gemini" ||
+    analysisStep === "saving"
+  }
+/>
+
+<ProgressStep
+  label="Check database"
+  active={analysisStep === "firestore"}
+  complete={analysisStep === "gemini" || analysisStep === "saving"}
+/>
+
+<ProgressStep
+  label="Personalize recommendation"
+  active={analysisStep === "gemini"}
+  complete={analysisStep === "saving"}
+/>
+
+<ProgressStep
+  label="Save scan"
+  active={analysisStep === "saving"}
+  complete={false}
+/>
+      </View>
+    </View>
+  );
+}
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerRow}>
@@ -232,8 +310,8 @@ export default function ResultsScreen() {
 
         <View style={styles.scorePill}>
           <Text style={styles.scorePillText}>
-            {loadingAI ? "AI analyzing..." : "Personalized"}
-          </Text>
+              {aiResult ? "Personalized" : "Not available"}
+            </Text>
         </View>
       </View>
 
@@ -256,9 +334,7 @@ export default function ResultsScreen() {
         <View style={styles.aiCard}>
           <Text style={styles.sectionTitle}>AI Recommendation</Text>
           <Text style={styles.bodyText}>
-            {loadingAI
-              ? "Gemini is creating your personalized explanation..."
-              : "AI recommendation is not available yet."}
+            {"AI recommendation is not available yet."}
           </Text>
         </View>
       )}
@@ -796,4 +872,55 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 20,
   },
+  progressCard: {
+  width: "100%",
+  backgroundColor: "#FFFFFF",
+  borderRadius: 22,
+  borderWidth: 1,
+  borderColor: "#E2D2C3",
+  padding: 18,
+  marginTop: 24,
+},
+progressStep: {
+  flexDirection: "row",
+  alignItems: "center",
+  marginBottom: 16,
+},
+progressDot: {
+  width: 28,
+  height: 28,
+  borderRadius: 14,
+  borderWidth: 1,
+  borderColor: "#E2D2C3",
+  alignItems: "center",
+  justifyContent: "center",
+  marginRight: 12,
+  backgroundColor: "#FFF8F1",
+},
+progressDotActive: {
+  borderColor: "#2F1B12",
+  backgroundColor: "#EAD8C8",
+},
+progressDotComplete: {
+  borderColor: "#2F1B12",
+  backgroundColor: "#2F1B12",
+},
+progressDotText: {
+  color: "#FFFFFF",
+  fontWeight: "900",
+  fontSize: 13,
+},
+progressLabel: {
+  color: "#9A6B4F",
+  fontSize: 15,
+  fontWeight: "700",
+},
+progressLabelActive: {
+  color: "#2F1B12",
+  fontWeight: "900",
+},
+progressLabelComplete: {
+  color: "#2F1B12",
+  fontWeight: "800",
+},
 });

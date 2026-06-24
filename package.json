@@ -7,14 +7,17 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "seed:ingredients": "tsx scripts/seedIngredients.ts"
+    "seed:ingredients": "tsx scripts/seedIngredients.ts",
+    "import:ingredients": "tsx scripts/importIngredientsFromCsv.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-ml-kit/text-recognition": "^2.0.0",
+    "csv-parse": "^6.2.1",
     "expo": "^54.0.34",
     "expo-build-properties": "~1.0.10",
+    "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.10",
     "expo-dev-client": "~6.0.21",
     "expo-image-picker": "~17.0.11",
