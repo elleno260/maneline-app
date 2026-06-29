@@ -28,8 +28,8 @@ export default function RootLayout() {
   }, [isLoggedIn, loading, segments]);
 
   return (
-    <HairProfileProvider>
+    
       <Stack screenOptions={{ headerShown: false }} />
-    </HairProfileProvider>
+    
   );
 }
