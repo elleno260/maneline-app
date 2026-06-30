@@ -1,35 +1,64 @@
-import { useEffect } from "react";
-import { Stack, useRouter, useSegments } from "expo-router";
-import { useAuthListener } from "../hooks/useAuthListener";
-import { useAuthStore } from "../store/authStore";
-import { HairProfileProvider } from "../context/HairProfileContext";
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function RootLayout() {
-  useAuthListener();
-
-  const router = useRouter();
-  const segments = useSegments();
-
-  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
-  const loading = useAuthStore((state) => state.loading);
-
-  useEffect(() => {
-    if (loading) return;
-
-    const onLoginScreen = segments[0] === "login";
-
-    if (!isLoggedIn && !onLoginScreen) {
-      router.replace("/login");
-    }
-
-    if (isLoggedIn && onLoginScreen) {
-      router.replace("/(tabs)");
-    }
-  }, [isLoggedIn, loading, segments]);
-
+export default function TabsLayout() {
   return (
-    <HairProfileProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </HairProfileProvider>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#111827',
+        tabBarInactiveTintColor: '#9CA3AF',
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: 'Scan',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="scan-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="results"
+        options={{
+          title: 'History',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="time-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: 'Search',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
   );
 }
