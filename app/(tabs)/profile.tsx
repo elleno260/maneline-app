@@ -1,771 +1,1494 @@
-import { useState } from "react";
-import {View,Text,StyleSheet,Button, ScrollView,Pressable,Switch,SafeAreaView,TextInput,Alert,} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useHairProfile } from "../../context/HairProfileContext";
-import MyProfileContent from "../../components/profile/MyProfileContent";
-import { router } from "expo-router";
-import { logoutUser } from "../../services/authService";
-import { useAuthStore } from "../../store/authStore";
-type ProfileSection = "profile" | "routine" | "settings";
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import type { ComponentProps } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  PAGE_HORIZONTAL_PADDING,
+  PAGE_TOP_PADDING,
+  TAB_BOTTOM_PADDING,
+} from '../../constants/layout';
+type IconName = ComponentProps<typeof Ionicons>['name'];
 
 type RoutineStep = {
   id: string;
-  step: string;
-  product: string;
-  status: "check" | "dash";
+  title: string;
+  frequency: string;
+  productType: string;
+  note: string;
 };
 
-const initialRoutineSteps: RoutineStep[] = [
+type HairProfile = {
+  displayName: string;
+  email: string;
+  hairType: string;
+  porosity: string;
+  density: string;
+  scalp: string;
+  goals: string[];
+  routineFocus: string;
+  routineSteps: RoutineStep[];
+  routineCompatibilityScore: number;
+  allergies: string;
+};
+
+type ActionItem = {
+  title: string;
+  subtitle: string;
+  icon: IconName;
+  onPress: () => void;
+};
+
+const STORAGE_KEY = 'MANELINE_PROFILE_V1';
+
+const hairTypes = ['1A-2C', '3A', '3B', '3C', '4A', '4B', '4C'];
+const porosityOptions = ['Low', 'Medium', 'High', 'Unsure'];
+const densityOptions = ['Fine', 'Medium', 'Thick', 'Unsure'];
+const scalpOptions = ['Balanced', 'Dry', 'Oily', 'Sensitive', 'Flaky'];
+
+const goalOptions = [
+  'Moisture',
+  'Length retention',
+  'Growth',
+  'Thickness',
+  'Scalp health',
+  'Definition',
+  'Repair',
+  'Heat protection',
+  'Color care',
+];
+
+const defaultRoutineSteps: RoutineStep[] = [
   {
-    id: "1",
-    step: "Cleanse",
-    product: "SheaMoisture Retention Shampoo",
-    status: "check",
+    id: 'cleanse',
+    title: 'Cleanse',
+    frequency: 'Every 7–10 days',
+    productType: 'Gentle shampoo or clarifying shampoo as needed',
+    note: 'Focus on removing buildup without stripping your hair.',
   },
   {
-    id: "2",
-    step: "Deep Condition",
-    product: "Mielle Honey Mask",
-    status: "check",
+    id: 'deep-condition',
+    title: 'Deep condition',
+    frequency: 'Weekly',
+    productType: 'Moisturizing deep conditioner',
+    note: 'Use heat or steam if your hair struggles to absorb moisture.',
   },
   {
-    id: "3",
-    step: "Leave-In Conditioner",
-    product: "As I am Leave-In Detangler",
-    status: "check",
+    id: 'leave-in',
+    title: 'Leave-in',
+    frequency: 'After every wash',
+    productType: 'Lightweight leave-in conditioner',
+    note: 'Apply in sections so the product distributes evenly.',
   },
   {
-    id: "4",
-    step: "Seal",
-    product: "Jamaican Castor Oil",
-    status: "dash",
+    id: 'seal-style',
+    title: 'Seal + style',
+    frequency: 'After moisturizing',
+    productType: 'Light cream or gel depending on the style',
+    note: 'Avoid over-layering heavy products to reduce buildup.',
   },
   {
-    id: "5",
-    step: "Style",
-    product: "Camille Rose Curl Cream",
-    status: "check",
+    id: 'refresh',
+    title: 'Refresh',
+    frequency: 'Midweek or as needed',
+    productType: 'Water-based mist or light moisturizer',
+    note: 'Only refresh if your hair feels dry. Do not add product just to add product.',
   },
 ];
 
+const defaultProfile: HairProfile = {
+  displayName: 'Ellen',
+  email: 'ellen@example.com',
+  hairType: '4C',
+  porosity: 'Low',
+  density: 'Fine',
+  scalp: 'Dry',
+  goals: ['Moisture', 'Length retention', 'Growth', 'Thickness'],
+  routineFocus:
+    'Moisture-first routine with lightweight products and buildup control.',
+  routineCompatibilityScore: 91,
+  allergies: '',
+  routineSteps: defaultRoutineSteps,
+};
+
 export default function ProfileScreen() {
-  const [activeSection, setActiveSection] = useState<ProfileSection>("profile");
-  const { hairProfile } = useHairProfile();
-  const user = useAuthStore((state) => state.user);
-  const loading = useAuthStore((state) => state.loading);
-  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
-  const avatar = profile?.avatar;
+  const [profile, setProfile] = useState<HairProfile>(defaultProfile);
+  const [draft, setDraft] = useState<HairProfile>(defaultProfile);
+  const [isEditing, setIsEditing] = useState(false);
+  const [routineReminders, setRoutineReminders] = useState(true);
+  const [ingredientAlerts, setIngredientAlerts] = useState(true);
+  const [marketplacePersonalization, setMarketplacePersonalization] =
+    useState(true);
 
-  const [routineSteps, setRoutineSteps] =
-    useState<RoutineStep[]>(initialRoutineSteps);
+  useEffect(() => {
+    loadProfile();
+  }, []);
 
-  const [showAddProductForm, setShowAddProductForm] = useState(false);
-  const [newStep, setNewStep] = useState("");
-  const [newProduct, setNewProduct] = useState("");
+  async function loadProfile() {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
 
-  const handleAddProduct = () => {
-    if (!newStep.trim() || !newProduct.trim()) {
-      Alert.alert("Missing Info", "Please enter both a step and product name.");
+    if (!raw) {
+      setProfile(defaultProfile);
+      setDraft(defaultProfile);
       return;
     }
 
-    setRoutineSteps((currentSteps) => [
-      ...currentSteps,
-      {
-        id: String(currentSteps.length + 1),
-        step: newStep.trim(),
-        product: newProduct.trim(),
-        status: "check",
-      },
-    ]);
+    try {
+      const savedProfile = JSON.parse(raw) as Partial<HairProfile>;
 
-    setNewStep("");
-    setNewProduct("");
-    setShowAddProductForm(false);
+      const mergedProfile: HairProfile = {
+        ...defaultProfile,
+        ...savedProfile,
+        goals: savedProfile.goals ?? defaultProfile.goals,
+        routineSteps: savedProfile.routineSteps ?? defaultProfile.routineSteps,
+        routineCompatibilityScore:
+          savedProfile.routineCompatibilityScore ??
+          defaultProfile.routineCompatibilityScore,
+      };
 
-    Alert.alert("Product Added", "The product has been added to your routine.");
-  };
+      setProfile(mergedProfile);
+      setDraft(mergedProfile);
+    } catch {
+      setProfile(defaultProfile);
+      setDraft(defaultProfile);
+    }
+  }
 
-  const handleSettingsPress = (label: string) => {
-    Alert.alert(label, `${label} was clicked.`);
-  };
+  async function saveProfile(nextProfile: HairProfile) {
+    setProfile(nextProfile);
+    setDraft(nextProfile);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextProfile));
+  }
 
+  function openEditor() {
+    setDraft(profile);
+    setIsEditing(true);
+  }
+
+  async function handleSaveDraft() {
+    await saveProfile(draft);
+    setIsEditing(false);
+  }
+
+  function toggleGoal(goal: string) {
+    setDraft((current) => {
+      const alreadySelected = current.goals.includes(goal);
+
+      return {
+        ...current,
+        goals: alreadySelected
+          ? current.goals.filter((item) => item !== goal)
+          : [...current.goals, goal],
+      };
+    });
+  }
+
+  function updateRoutineStep(
+    stepId: string,
+    field: keyof Omit<RoutineStep, 'id'>,
+    value: string
+  ) {
+    setDraft((current) => ({
+      ...current,
+      routineSteps: current.routineSteps.map((step) =>
+        step.id === stepId ? { ...step, [field]: value } : step
+      ),
+    }));
+  }
+
+  function resetDemoProfile() {
+    Alert.alert(
+      'Reset profile?',
+      'This will reset the demo profile back to the default ManeLine profile.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await saveProfile(defaultProfile);
+          },
+        },
+      ]
+    );
+  }
+
+  function goTo(path: string) {
+    router.push(path as never);
+  }
+
+  const profileCompletion = useMemo(() => {
+    const fields = [
+      profile.displayName,
+      profile.email,
+      profile.hairType,
+      profile.porosity,
+      profile.density,
+      profile.scalp,
+      profile.routineFocus,
+    ];
+
+    const completedFields = fields.filter(Boolean).length;
+    const hasGoals = profile.goals.length > 0 ? 1 : 0;
+    const hasRoutine = profile.routineSteps.length > 0 ? 1 : 0;
+
+    return Math.round(((completedFields + hasGoals + hasRoutine) / 9) * 100);
+  }, [profile]);
+
+  const actionItems: ActionItem[] = [
+    {
+      title: 'Edit Avatar',
+      subtitle: 'Update your ManeLine look',
+      icon: 'person-circle-outline',
+      onPress: () => goTo('/editAvatar'),
+    },
+    {
+      title: 'Hair Profile Setup',
+      subtitle: 'Retake profile questions',
+      icon: 'sparkles-outline',
+      onPress: () => goTo('/hairProfileSetup'),
+    },
+    {
+      title: 'Scan History',
+      subtitle: 'View products you scanned',
+      icon: 'time-outline',
+      onPress: () => goTo('/(tabs)/results'),
+    },
+    {
+      title: 'Product Library',
+      subtitle: 'Shop routine-matched products',
+      icon: 'bag-outline',
+      onPress: () => goTo('/(tabs)/search'),
+    },
+    {
+      title: 'Review Scan',
+      subtitle: 'Demo the review flow',
+      icon: 'document-text-outline',
+      onPress: () => goTo('/review-scan'),
+    },
+    {
+      title: 'Login Screen',
+      subtitle: 'Preview auth flow',
+      icon: 'log-in-outline',
+      onPress: () => goTo('/login'),
+    },
+  ];
+const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.screen}>
-        <View style={styles.header}>
-          <View style={styles.avatarSection}>
-  <View style={styles.avatarCircle}>
-    <Text style={styles.avatarEmoji}>
-      {avatar?.hairShape === "Curly" || avatar?.hairShape === "Coily"
-        ? "🧑‍🦱"
-        : avatar?.hairShape === "Bald"
-        ? "👤"
-        : "🧑"}
-    </Text>
-  </View>
+    <View style={styles.screen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+contentContainerStyle={[
+  styles.content,
+  {
+    paddingTop: insets.top + PAGE_TOP_PADDING,
+    paddingBottom: TAB_BOTTOM_PADDING,
+  },
+]}      >
+        <View style={styles.headerCard}>
+          <View style={styles.headerTop}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {profile.displayName.slice(0, 1).toUpperCase()}
+              </Text>
+            </View>
 
-  <Pressable
-    style={styles.editAvatarButton}
-    onPress={() => router.push("/edit-avatar")}
-  >
-    <Text style={styles.editAvatarButtonText}>Edit Avatar</Text>
-  </Pressable>
-</View>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.eyebrow}>Your ManeLine profile</Text>
+              <Text style={styles.name}>{profile.displayName}</Text>
+              <Text style={styles.email}>{profile.email}</Text>
+            </View>
 
+            <Pressable style={styles.editButton} onPress={openEditor}>
+              <Ionicons name="create-outline" size={20} color="#111827" />
+            </Pressable>
+          </View>
 
-          <View style={styles.profileInfo}>
-            <Text style={styles.name}>Ellen Ojo</Text>
+          <View style={styles.completionWrap}>
+            <View style={styles.completionTop}>
+              <Text style={styles.completionText}>Profile strength</Text>
+              <Text style={styles.completionPercent}>{profileCompletion}%</Text>
+            </View>
 
-            <Text style={styles.hairSummary}>
-              {hairProfile.hairType} | {hairProfile.porosity} Porosity |{" "}
-              {hairProfile.density} Density
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${profileCompletion}%` },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.completionHint}>
+              The more complete your profile is, the better your scan results
+              and product matches become.
             </Text>
-
-            <View style={styles.proBadge}>
-              <Ionicons name="star" size={14} color="#BFD3F2" />
-              <Text style={styles.proBadgeText}>ManeLine Pro</Text>
-            </View>
           </View>
         </View>
 
-        <View style={styles.topTabs}>
-          <Pressable
-            style={[
-              styles.topTab,
-              activeSection === "profile" && styles.activeTab,
-            ]}
-            onPress={() => setActiveSection("profile")}
-          >
-            <Text style={styles.topTabText}>My Profile</Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.topTab,
-              activeSection === "routine" && styles.activeTab,
-            ]}
-            onPress={() => setActiveSection("routine")}
-          >
-            <Text style={styles.topTabText}>Routine</Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.topTab,
-              activeSection === "settings" && styles.activeTab,
-            ]}
-            onPress={() => setActiveSection("settings")}
-          >
-            <Text style={styles.topTabText}>Settings</Text>
-          </Pressable>
+        <View style={styles.statsRow}>
+          <MiniStat
+            icon="scan-outline"
+            label="Scans"
+            value="12"
+            helper="saved"
+          />
+          <MiniStat
+            icon="heart-outline"
+            label="Saved"
+            value="8"
+            helper="products"
+          />
+          <MiniStat
+            icon="sparkles-outline"
+            label="Routine"
+            value={`${profile.routineCompatibilityScore}%`}
+            helper="match"
+          />
         </View>
 
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {activeSection === "profile" && <MyProfileContent />}
+        <SectionTitle
+          title="Hair identity"
+          subtitle="This powers your scan results and product recommendations."
+        />
 
-          {activeSection === "routine" && (
-            <RoutineContent
-              routineSteps={routineSteps}
-              showAddProductForm={showAddProductForm}
-              setShowAddProductForm={setShowAddProductForm}
-              newStep={newStep}
-              setNewStep={setNewStep}
-              newProduct={newProduct}
-              setNewProduct={setNewProduct}
-              handleAddProduct={handleAddProduct}
-            />
-          )}
+        <View style={styles.identityGrid}>
+          <ProfileChip
+            icon="flower-outline"
+            label="Hair type"
+            value={profile.hairType}
+          />
+          <ProfileChip
+            icon="water-outline"
+            label="Porosity"
+            value={profile.porosity}
+          />
+          <ProfileChip
+            icon="layers-outline"
+            label="Density"
+            value={profile.density}
+          />
+          <ProfileChip
+            icon="leaf-outline"
+            label="Scalp"
+            value={profile.scalp}
+          />
+        </View>
 
-          {activeSection === "settings" && (
-            <SettingsContent
-              notificationsEnabled={notificationsEnabled}
-              setNotificationsEnabled={setNotificationsEnabled}
-              handleSettingsPress={handleSettingsPress}
-            />
-          )}
-        </ScrollView>
-      </View>
-    </SafeAreaView>
-  );
-}
+        <SectionTitle
+          title="Hair goals"
+          subtitle="What your routine is built around."
+        />
 
-type RoutineContentProps = {
-  routineSteps: RoutineStep[];
-  showAddProductForm: boolean;
-  setShowAddProductForm: (value: boolean) => void;
-  newStep: string;
-  setNewStep: (value: string) => void;
-  newProduct: string;
-  setNewProduct: (value: string) => void;
-  handleAddProduct: () => void;
-};
+        <View style={styles.goalWrap}>
+          {profile.goals.map((goal) => (
+            <View key={goal} style={styles.goalChip}>
+              <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+              <Text style={styles.goalText}>{goal}</Text>
+            </View>
+          ))}
+        </View>
 
-function RoutineContent({
-  routineSteps,
-  showAddProductForm,
-  setShowAddProductForm,
-  newStep,
-  setNewStep,
-  newProduct,
-  setNewProduct,
-  handleAddProduct,
-}: RoutineContentProps) {
-  return (
-    <View>
-      <View style={styles.routineHeaderRow}>
-        <Text style={styles.routineTitle}>Wash Day Routine</Text>
+        <View style={styles.routineCard}>
+          <View style={styles.routineIcon}>
+            <Ionicons name="calendar-outline" size={24} color="#FFFFFF" />
+          </View>
 
-        <Pressable onPress={() => setShowAddProductForm(true)}>
-          <Text style={styles.newRoutine}>+ New Routine</Text>
-        </Pressable>
-      </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.routineTitle}>Routine focus</Text>
+            <Text style={styles.routineText}>{profile.routineFocus}</Text>
 
-      <View style={styles.routineContent}>
-        <View style={styles.scoreCard}>
+            <Pressable onPress={openEditor}>
+              <Text style={styles.editRoutineText}>Edit routine</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.compatibilityCard}>
           <View>
-            <Text style={styles.scoreLabel}>Compatibility Score</Text>
-            <Text style={styles.scoreSubtext}>No Conflicts Detected</Text>
+            <Text style={styles.compatibilityLabel}>Routine compatibility</Text>
+            <Text style={styles.compatibilityScore}>
+              {profile.routineCompatibilityScore}%
+            </Text>
           </View>
 
-          <Text style={styles.scoreNumber}>85</Text>
-        </View>
-
-        {routineSteps.map((item) => (
-          <Pressable
-            key={item.id}
-            style={styles.stepCard}
-            onPress={() => Alert.alert(item.step, item.product)}
-          >
-            <View style={styles.stepNumberCircle}>
-              <Text style={styles.stepNumber}>{item.id}</Text>
-            </View>
-
-            <View style={styles.stepTextContainer}>
-              <Text style={styles.stepName}>{item.step}</Text>
-              <Text style={styles.productName}>{item.product}</Text>
-            </View>
-
-            {item.status === "check" ? (
-              <Ionicons name="checkmark" size={24} color="#78A85C" />
-            ) : (
-              <Text style={styles.dashIcon}>—</Text>
-            )}
-          </Pressable>
-        ))}
-
-        {showAddProductForm && (
-          <View style={styles.addProductForm}>
-            <Text style={styles.formTitle}>Add Product</Text>
-
-            <TextInput
-              style={styles.formInput}
-              placeholder="Step e.g. Moisturize"
-              placeholderTextColor="#7A7A7A"
-              value={newStep}
-              onChangeText={setNewStep}
-            />
-
-            <TextInput
-              style={styles.formInput}
-              placeholder="Product name"
-              placeholderTextColor="#7A7A7A"
-              value={newProduct}
-              onChangeText={setNewProduct}
-            />
-
-            <View style={styles.formButtonRow}>
-              <Pressable
-                style={styles.cancelProductButton}
-                onPress={() => setShowAddProductForm(false)}
-              >
-                <Text style={styles.cancelProductText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.saveProductButton}
-                onPress={handleAddProduct}
-              >
-                <Text style={styles.saveProductText}>Save Product</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        <Pressable
-          style={styles.addProductButton}
-          onPress={() => setShowAddProductForm(true)}
-        >
-          <Text style={styles.addProductText}>+ Add Product</Text>
-        </Pressable>
-
-        <View style={styles.tipCard}>
-          <Text style={styles.tipTitle}>Moisture Balance Check</Text>
-          <Text style={styles.tipText}>
-            Consider adding a light protein treatment every 4 weeks to maintain
-            balance.
+          <Text style={styles.compatibilityText}>
+            Your routine currently aligns with your profile and goals. As you
+            scan more products, this score can become more personalized.
           </Text>
         </View>
-      </View>
-    </View>
-  );
-}
 
-type SettingsContentProps = {
-  notificationsEnabled: boolean;
-  setNotificationsEnabled: (value: boolean) => void;
-  handleSettingsPress: (label: string) => void;
-};
+        <SectionTitle
+          title="My routine"
+          subtitle="The routine ManeLine uses to shape product matches and scan recommendations."
+        />
 
-function SettingsContent({
-  notificationsEnabled,
-  setNotificationsEnabled,
-  handleSettingsPress,
-}: SettingsContentProps) {
-  return (
-    <View style={styles.settingsContent}>
-      <Text style={styles.settingsSectionTitle}>General</Text>
+        <View style={styles.routineList}>
+          {profile.routineSteps.map((step, index) => (
+            <View key={step.id} style={styles.routineStepCard}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>{index + 1}</Text>
+              </View>
 
-      <View style={styles.settingsCard}>
-        <SettingsRow label="Edit Name" onPress={handleSettingsPress} />
-        <SettingsRow label="Change Phone Number" onPress={handleSettingsPress} />
-        <SettingsRow label="Change Email Address" onPress={handleSettingsPress} />
-        <SettingsRow label="Change Password" onPress={handleSettingsPress} />
-
-        <View style={styles.settingsRow}>
-          <Text style={styles.settingsRowText}>Notification Preferences</Text>
-
-          <View style={styles.switchWrapper}>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: "#B9B9B9", true: "#7AC45A" }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>{step.title}</Text>
+                <Text style={styles.stepFrequency}>{step.frequency}</Text>
+                <Text style={styles.stepProduct}>{step.productType}</Text>
+                <Text style={styles.stepNote}>{step.note}</Text>
+              </View>
+            </View>
+          ))}
         </View>
 
-        <SettingsRow label="Multiple Profiles" onPress={handleSettingsPress} />
-        <SettingsRow label="Offline Mode" onPress={handleSettingsPress} isLast />
-      </View>
+        <View style={styles.marketplaceCard}>
+          <View style={styles.marketplaceTop}>
+            <View>
+              <Text style={styles.marketplaceEyebrow}>Coming marketplace</Text>
+              <Text style={styles.marketplaceTitle}>Products picked for you</Text>
+            </View>
 
-      <Text style={styles.settingsSectionTitle}>Support</Text>
+            <View style={styles.marketplaceIcon}>
+              <Ionicons name="bag-handle-outline" size={24} color="#FFFFFF" />
+            </View>
+          </View>
 
-      <View style={styles.settingsCard}>
-        <SettingsRow label="Rate Our App" onPress={handleSettingsPress} />
-        <SettingsRow label="Help & FAQs" onPress={handleSettingsPress} />
-        <SettingsRow label="Terms and Conditions" onPress={handleSettingsPress} />
-        <SettingsRow label="Privacy Policy" onPress={handleSettingsPress} />
-        <SettingsRow label="About ManeLine" onPress={handleSettingsPress} isLast />
-      </View>
+          <Text style={styles.marketplaceText}>
+            Your marketplace can use this profile, scan history, and routine to
+            recommend products that actually match your hair needs.
+          </Text>
 
-      <Text style={styles.settingsSectionTitle}>Account Activation</Text>
+          <Pressable
+            style={styles.marketplaceButton}
+            onPress={() => goTo('/(tabs)/search')}
+          >
+            <Text style={styles.marketplaceButtonText}>Explore product library</Text>
+            <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+          </Pressable>
+        </View>
 
-      <View style={styles.settingsCard}>
-        <SettingsRow label="Sign Out" danger onPress={handleSettingsPress} />
-
-        <SettingsRow
-          label="Delete Account"
-          danger
-          onPress={handleSettingsPress}
-          isLast
+        <SectionTitle
+          title="Demo shortcuts"
+          subtitle="Quick access while presenting the app."
         />
-      </View>
+
+        <View style={styles.actionGrid}>
+          {actionItems.map((item) => (
+            <Pressable
+              key={item.title}
+              style={styles.actionCard}
+              onPress={item.onPress}
+            >
+              <View style={styles.actionIcon}>
+                <Ionicons name={item.icon} size={22} color="#111827" />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionTitle}>{item.title}</Text>
+                <Text style={styles.actionSubtitle}>{item.subtitle}</Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </Pressable>
+          ))}
+        </View>
+
+        <SectionTitle title="Settings" subtitle="Personalize the app experience." />
+
+        <View style={styles.settingsCard}>
+          <SettingRow
+            icon="notifications-outline"
+            title="Routine reminders"
+            subtitle="Get nudges for wash day, deep conditioning, and product use."
+            value={routineReminders}
+            onValueChange={setRoutineReminders}
+          />
+
+          <View style={styles.divider} />
+
+          <SettingRow
+            icon="warning-outline"
+            title="Ingredient alerts"
+            subtitle="Flag ingredients that may not fit your profile."
+            value={ingredientAlerts}
+            onValueChange={setIngredientAlerts}
+          />
+
+          <View style={styles.divider} />
+
+          <SettingRow
+            icon="bag-outline"
+            title="Marketplace personalization"
+            subtitle="Use your profile to improve product matches."
+            value={marketplacePersonalization}
+            onValueChange={setMarketplacePersonalization}
+          />
+        </View>
+
+        <Pressable style={styles.resetButton} onPress={resetDemoProfile}>
+          <Ionicons name="refresh-outline" size={18} color="#B91C1C" />
+          <Text style={styles.resetText}>Reset demo profile</Text>
+        </Pressable>
+      </ScrollView>
+
+      <EditProfileModal
+        visible={isEditing}
+        draft={draft}
+        setDraft={setDraft}
+        onClose={() => setIsEditing(false)}
+        onSave={handleSaveDraft}
+        toggleGoal={toggleGoal}
+        updateRoutineStep={updateRoutineStep}
+      />
     </View>
   );
 }
 
-type SettingsRowProps = {
-  label: string;
-  isLast?: boolean;
-  danger?: boolean;
-  onPress: (label: string) => void;
-};
-
-function SettingsRow({
-  label,
-  isLast = false,
-  danger = false,
-  onPress,
-}: SettingsRowProps) {
+function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.settingsRow,
-        isLast && styles.lastSettingsRow,
-        pressed && styles.pressedRow,
-      ]}
-      onPress={() => onPress(label)}
-    >
-      <Text style={[styles.settingsRowText, danger && styles.dangerText]}>
-        {label}
-      </Text>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {!!subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+    </View>
+  );
+}
 
-      <Ionicons name="chevron-forward" size={18} color="#5E5E5E" />
-    </Pressable>
+function MiniStat({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <Ionicons name={icon} size={21} color="#D97706" />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statHelper}>{helper}</Text>
+    </View>
+  );
+}
+
+function ProfileChip({
+  icon,
+  label,
+  value,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.profileChip}>
+      <View style={styles.profileChipIcon}>
+        <Ionicons name={icon} size={20} color="#111827" />
+      </View>
+
+      <Text style={styles.profileChipLabel}>{label}</Text>
+      <Text style={styles.profileChipValue}>{value}</Text>
+    </View>
+  );
+}
+
+function SettingRow({
+  icon,
+  title,
+  subtitle,
+  value,
+  onValueChange,
+}: {
+  icon: IconName;
+  title: string;
+  subtitle: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  return (
+    <View style={styles.settingRow}>
+      <View style={styles.settingIcon}>
+        <Ionicons name={icon} size={21} color="#111827" />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        <Text style={styles.settingSubtitle}>{subtitle}</Text>
+      </View>
+
+      <Switch value={value} onValueChange={onValueChange} />
+    </View>
+  );
+}
+
+function EditProfileModal({
+  visible,
+  draft,
+  setDraft,
+  onClose,
+  onSave,
+  toggleGoal,
+  updateRoutineStep,
+}: {
+  visible: boolean;
+  draft: HairProfile;
+  setDraft: React.Dispatch<React.SetStateAction<HairProfile>>;
+  onClose: () => void;
+  onSave: () => void;
+  toggleGoal: (goal: string) => void;
+  updateRoutineStep: (
+    stepId: string,
+    field: keyof Omit<RoutineStep, 'id'>,
+    value: string
+  ) => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHandle} />
+
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Edit hair profile</Text>
+              <Text style={styles.modalSubtitle}>
+                Update the details that shape your product matches.
+              </Text>
+            </View>
+
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={26} color="#111827" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={styles.inputLabel}>Name</Text>
+            <TextInput
+              value={draft.displayName}
+              onChangeText={(text) =>
+                setDraft((current) => ({ ...current, displayName: text }))
+              }
+              placeholder="Your name"
+              style={styles.input}
+            />
+
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+              value={draft.email}
+              onChangeText={(text) =>
+                setDraft((current) => ({ ...current, email: text }))
+              }
+              placeholder="Your email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+            />
+
+            <OptionGroup
+              label="Hair type"
+              options={hairTypes}
+              selected={draft.hairType}
+              onSelect={(value) =>
+                setDraft((current) => ({ ...current, hairType: value }))
+              }
+            />
+
+            <OptionGroup
+              label="Porosity"
+              options={porosityOptions}
+              selected={draft.porosity}
+              onSelect={(value) =>
+                setDraft((current) => ({ ...current, porosity: value }))
+              }
+            />
+
+            <OptionGroup
+              label="Density"
+              options={densityOptions}
+              selected={draft.density}
+              onSelect={(value) =>
+                setDraft((current) => ({ ...current, density: value }))
+              }
+            />
+
+            <OptionGroup
+              label="Scalp"
+              options={scalpOptions}
+              selected={draft.scalp}
+              onSelect={(value) =>
+                setDraft((current) => ({ ...current, scalp: value }))
+              }
+            />
+
+            <Text style={styles.inputLabel}>Hair goals</Text>
+            <View style={styles.modalGoalWrap}>
+              {goalOptions.map((goal) => {
+                const isSelected = draft.goals.includes(goal);
+
+                return (
+                  <Pressable
+                    key={goal}
+                    onPress={() => toggleGoal(goal)}
+                    style={[
+                      styles.modalGoalChip,
+                      isSelected && styles.modalGoalChipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.modalGoalText,
+                        isSelected && styles.modalGoalTextActive,
+                      ]}
+                    >
+                      {goal}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.inputLabel}>Routine focus</Text>
+            <TextInput
+              value={draft.routineFocus}
+              onChangeText={(text) =>
+                setDraft((current) => ({ ...current, routineFocus: text }))
+              }
+              placeholder="Describe your current routine focus"
+              multiline
+              style={[styles.input, styles.textArea]}
+            />
+
+            <Text style={styles.inputLabel}>Routine compatibility score</Text>
+            <TextInput
+              value={String(draft.routineCompatibilityScore)}
+              onChangeText={(text) => {
+                const numericValue = Number(text.replace(/[^0-9]/g, ''));
+                const safeValue = Math.max(0, Math.min(100, numericValue || 0));
+
+                setDraft((current) => ({
+                  ...current,
+                  routineCompatibilityScore: safeValue,
+                }));
+              }}
+              keyboardType="number-pad"
+              placeholder="0-100"
+              style={styles.input}
+            />
+
+            <Text style={styles.inputLabel}>Full routine</Text>
+
+            {draft.routineSteps.map((step, index) => (
+              <View key={step.id} style={styles.editRoutineCard}>
+                <Text style={styles.editRoutineTitle}>
+                  Step {index + 1}: {step.title}
+                </Text>
+
+                <Text style={styles.smallInputLabel}>Step name</Text>
+                <TextInput
+                  value={step.title}
+                  onChangeText={(text) =>
+                    updateRoutineStep(step.id, 'title', text)
+                  }
+                  style={styles.input}
+                />
+
+                <Text style={styles.smallInputLabel}>Frequency</Text>
+                <TextInput
+                  value={step.frequency}
+                  onChangeText={(text) =>
+                    updateRoutineStep(step.id, 'frequency', text)
+                  }
+                  style={styles.input}
+                />
+
+                <Text style={styles.smallInputLabel}>Product type</Text>
+                <TextInput
+                  value={step.productType}
+                  onChangeText={(text) =>
+                    updateRoutineStep(step.id, 'productType', text)
+                  }
+                  multiline
+                  style={[styles.input, styles.smallTextArea]}
+                />
+
+                <Text style={styles.smallInputLabel}>Routine note</Text>
+                <TextInput
+                  value={step.note}
+                  onChangeText={(text) =>
+                    updateRoutineStep(step.id, 'note', text)
+                  }
+                  multiline
+                  style={[styles.input, styles.smallTextArea]}
+                />
+              </View>
+            ))}
+
+            <Text style={styles.inputLabel}>Allergies or sensitivities</Text>
+            <TextInput
+              value={draft.allergies}
+              onChangeText={(text) =>
+                setDraft((current) => ({ ...current, allergies: text }))
+              }
+              placeholder="Optional"
+              multiline
+              style={[styles.input, styles.textArea]}
+            />
+
+            <Pressable style={styles.saveButton} onPress={onSave}>
+              <Text style={styles.saveButtonText}>Save profile</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function OptionGroup({
+  label,
+  options,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  options: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <View>
+      <Text style={styles.inputLabel}>{label}</Text>
+
+      <View style={styles.optionWrap}>
+        {options.map((option) => {
+          const isSelected = selected === option;
+
+          return (
+            <Pressable
+              key={option}
+              onPress={() => onSelect(option)}
+              style={[styles.optionChip, isSelected && styles.optionChipActive]}
+            >
+              <Text
+                style={[
+                  styles.optionText,
+                  isSelected && styles.optionTextActive,
+                ]}
+              >
+                {option}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#1D314F",
-  },
   screen: {
     flex: 1,
-    backgroundColor: "#FDF9E4",
+    backgroundColor: '#FFF7F0',
   },
-
-  header: {
-    height: 164,
-    backgroundColor: "#1D314F",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 35,
-    paddingTop: 18,
+  content: {
+      paddingHorizontal: PAGE_HORIZONTAL_PADDING,
   },
-  // profileImage: {
-  //   width: 82,
-  //   height: 82,
-  //   borderRadius: 41,
-  //   backgroundColor: "#D9D9D9",
-  //   marginRight: 12,
-  // },
-  avatarSection: {
-  alignItems: "center",
-  marginBottom: 15,
-  marginRight: 12
-},
-
-avatarCircle: {
-  width: 82,
-  height: 82,
-  borderRadius: 41,
-  backgroundColor: "#FFF8F1",
-  alignItems: "center",
-  //justifyContent: "center",
-  borderWidth: 1,
-  borderColor: "#E2D2C3",
-  marginBottom: 12,
-},
-
-avatarEmoji: {
-  fontSize: 50,
- // alignItems: "center",
- marginTop: 10,
- marginBottom: 10,
- marginLeft: 10,
- marginRight: 10,
-},
-
-editAvatarButton: {
-  backgroundColor: "#2F1B12",
-  borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  alignItems: "center",
-},
-
-editAvatarButtonText: {
-  color: "#FFFFFF",
-  fontSize: 9,
-  fontWeight: "700",
-},
-  profileInfo: {
+  headerCard: {
+    backgroundColor: '#111827',
+    borderRadius: 30,
+    padding: 22,
+    marginBottom: 16,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  avatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  headerTextWrap: {
     flex: 1,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FBBF24',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   name: {
-    color: "#FFFFFF",
-    fontSize: 24,
-    fontWeight: "700",
-    fontFamily: "serif",
-    marginBottom: 4,
+    marginTop: 4,
+    fontSize: 27,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
-  hairSummary: {
-    color: "#BFD3F2",
+  email: {
+    marginTop: 3,
     fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 6,
+    color: '#D1D5DB',
   },
-  proBadge: {
-    backgroundColor: "#4D668D",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 5,
+  editButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  proBadgeText: {
-    color: "#BFD3F2",
+  completionWrap: {
+    marginTop: 22,
+  },
+  completionTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  completionText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  completionPercent: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  progressTrack: {
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: '#374151',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#FBBF24',
+  },
+  completionHint: {
+    marginTop: 9,
+    color: '#D1D5DB',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+  },
+  statValue: {
+    marginTop: 9,
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  statLabel: {
     fontSize: 12,
+    fontWeight: '800',
+    color: '#111827',
   },
-
-  topTabs: {
-    height: 39,
-    backgroundColor: "#FFF8BD",
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "#B8AA73",
+  statHelper: {
+    marginTop: 2,
+    fontSize: 11,
+    color: '#6B7280',
   },
-  topTab: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+  sectionHeader: {
+    marginBottom: 12,
+    marginTop: 4,
   },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: "#3B251A",
+  sectionTitle: {
+    fontSize: 21,
+    fontWeight: '900',
+    color: '#111827',
   },
-  topTabText: {
+  sectionSubtitle: {
+    marginTop: 4,
     fontSize: 14,
-    fontWeight: "700",
-    color: "#000000",
+    lineHeight: 20,
+    color: '#6B7280',
   },
-
-  contentScroll: {
-    flex: 1,
+  identityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 24,
   },
-  scrollContent: {
-    paddingBottom: 110,
+  profileChip: {
+    width: '47.8%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
   },
-
-  routineHeaderRow: {
-    height: 44,
-    paddingHorizontal: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  profileChipIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFF1E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  profileChipLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6B7280',
+  },
+  profileChipValue: {
+    marginTop: 3,
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  goalWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+    marginBottom: 18,
+  },
+  goalChip: {
+    backgroundColor: '#111827',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  goalText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  routineCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 22,
+  },
+  routineIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   routineTitle: {
-    fontSize: 14,
-    color: "#000000",
-    fontWeight: "900",
-  },
-  newRoutine: {
-    fontSize: 14,
-    color: "#1D314F",
-    fontWeight: "800",
-    marginRight: 31,
-  },
-  routineContent: {
-    paddingHorizontal: 22,
-  },
-  scoreCard: {
-    height: 63,
-    backgroundColor: "#D6EDB8",
-    borderRadius: 10,
-    paddingHorizontal: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  scoreLabel: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#6D9447",
-    marginBottom: 2,
-  },
-  scoreSubtext: {
-    fontSize: 12,
-    color: "#6D9447",
-  },
-  scoreNumber: {
-    fontSize: 31,
-    fontWeight: "500",
-    color: "#7EAA54",
-  },
-  stepCard: {
-    height: 62,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D1D1D1",
-    borderRadius: 10,
-    paddingHorizontal: 11,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  stepNumberCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#3B251A",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 15,
-  },
-  stepNumber: {
-    color: "#FFFFFF",
-    fontSize: 21,
-  },
-  stepTextContainer: {
-    flex: 1,
-  },
-  stepName: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#000000",
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#111827',
     marginBottom: 4,
   },
-  productName: {
+  routineText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#4B5563',
+  },
+  editRoutineText: {
+    marginTop: 10,
     fontSize: 13,
-    color: "#000000",
+    fontWeight: '900',
+    color: '#D97706',
+    textDecorationLine: 'underline',
   },
-  dashIcon: {
-    fontSize: 24,
-    color: "#B8931F",
-    paddingRight: 6,
+  compatibilityCard: {
+    backgroundColor: '#D97706',
+    borderRadius: 28,
+    padding: 18,
+    marginBottom: 24,
   },
-  addProductButton: {
-    height: 42,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E1D487",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 15,
-  },
-  addProductText: {
-    fontSize: 20,
-    color: "#000000",
-  },
-  addProductForm: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D1D1D1",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 14,
-  },
-  formTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    marginBottom: 10,
-    color: "#000000",
-  },
-  formInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: "#D1D1D1",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 10,
-    backgroundColor: "#FDF9E4",
-  },
-  formButtonRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  cancelProductButton: {
-    flex: 1,
-    height: 38,
-    borderWidth: 1,
-    borderColor: "#1D314F",
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelProductText: {
-    color: "#1D314F",
-    fontWeight: "800",
-  },
-  saveProductButton: {
-    flex: 1,
-    height: 38,
-    backgroundColor: "#1D314F",
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  saveProductText: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-  },
-  tipCard: {
-    backgroundColor: "#FFF8BD",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 9,
-    borderLeftWidth: 5,
-    borderLeftColor: "#F3C85B",
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  tipTitle: {
+  compatibilityLabel: {
     fontSize: 12,
-    fontWeight: "900",
-    color: "#3B251A",
-    marginBottom: 3,
+    fontWeight: '900',
+    color: '#FFF7ED',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
   },
-  tipText: {
+  compatibilityScore: {
+    marginTop: 5,
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  compatibilityText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  routineList: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  routineStepCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    flexDirection: 'row',
+    gap: 13,
+  },
+  stepNumber: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  stepTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  stepFrequency: {
+    marginTop: 3,
     fontSize: 12,
-    color: "#000000",
-    lineHeight: 16,
+    fontWeight: '900',
+    color: '#D97706',
   },
-
-  settingsContent: {
+  stepProduct: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#374151',
+  },
+  stepNote: {
+    marginTop: 5,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#6B7280',
+  },
+  marketplaceCard: {
+    backgroundColor: '#111827',
+    borderRadius: 28,
+    padding: 20,
+    marginBottom: 24,
+  },
+  marketplaceTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  marketplaceEyebrow: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FBBF24',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  marketplaceTitle: {
+    marginTop: 4,
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  marketplaceIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  marketplaceText: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#E5E7EB',
+  },
+  marketplaceButton: {
+    alignSelf: 'flex-start',
+    marginTop: 16,
+    backgroundColor: '#D97706',
+    borderRadius: 999,
+    paddingVertical: 10,
     paddingHorizontal: 14,
-    paddingTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
-  settingsSectionTitle: {
+  marketplaceButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  actionGrid: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  actionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+  },
+  actionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFF1E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTitle: {
     fontSize: 15,
-    fontWeight: "800",
-    color: "#000000",
-    marginLeft: 8,
-    marginBottom: 8,
-    paddingTop: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#B9B9B9",
-    paddingBottom: 6,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  actionSubtitle: {
+    marginTop: 3,
+    fontSize: 12,
+    color: '#6B7280',
   },
   settingsCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#D1D1D1",
-    borderRadius: 10,
-    marginBottom: 22,
+    borderColor: '#F3D5C0',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FFF1E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  settingSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#6B7280',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginVertical: 14,
+  },
+  resetButton: {
+    marginTop: 18,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: 6,
   },
-  settingsRow: {
-    minHeight: 48,
-    borderBottomWidth: 1,
-    borderBottomColor: "#B9B9B9",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  resetText: {
+    color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '900',
   },
-  lastSettingsRow: {
-    borderBottomWidth: 0,
-  },
-  settingsRowText: {
-    fontSize: 15,
-    color: "#000000",
-    fontWeight: "600",
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.55)',
+    justifyContent: 'flex-end',
   },
-  switchWrapper: {
-    width: 70,
-    alignItems: "center",
-    justifyContent: "center",
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 22,
+    maxHeight: '92%',
   },
-  pressedRow: {
-    opacity: 0.6,
+  modalHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#D1D5DB',
+    marginBottom: 18,
   },
-  dangerText: {
-    color: "#FF0000",
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 14,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  modalSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  inputLabel: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  smallInputLabel: {
+    marginTop: 12,
+    marginBottom: 7,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#4B5563',
+  },
+  input: {
+    backgroundColor: '#FFF7F0',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111827',
+  },
+  textArea: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+  },
+  smallTextArea: {
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  optionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    backgroundColor: '#FFF7F0',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  optionChipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  optionText: {
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  optionTextActive: {
+    color: '#FFFFFF',
+  },
+  modalGoalWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modalGoalChip: {
+    backgroundColor: '#FFF7F0',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  modalGoalChipActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#D97706',
+  },
+  modalGoalText: {
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  modalGoalTextActive: {
+    color: '#FFFFFF',
+  },
+  editRoutineCard: {
+    backgroundColor: '#FFF7F0',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    padding: 14,
+    marginBottom: 12,
+  },
+  editRoutineTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  saveButton: {
+    marginTop: 22,
+    marginBottom: 28,
+    backgroundColor: '#111827',
+    borderRadius: 18,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });

@@ -8,7 +8,8 @@ import {
   View,
 } from 'react-native';
 import { saveScanToHistory, ScanHistoryItem } from '../../services/scanHistoryService';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PAGE_HORIZONTAL_PADDING, PAGE_TOP_PADDING, TAB_BOTTOM_PADDING} from '../../constants/layout';
 export default function ScanScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
@@ -58,9 +59,14 @@ export default function ScanScreen() {
       setIsAnalyzing(false);
     }, 1500);
   }
-
+  const insets = useSafeAreaInsets();
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container,
+        {
+          paddingTop: insets.top + 18,
+          paddingBottom: 130,
+        },
+      ]}>
       <Text style={styles.title}>Scan Product</Text>
       <Text style={styles.subtitle}>
         Scan a barcode or product label to analyze ingredients and save the item
@@ -130,7 +136,7 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
+    paddingHorizontal: 20,
     gap: 18,
     backgroundColor: '#FFF7F0',
     flexGrow: 1,

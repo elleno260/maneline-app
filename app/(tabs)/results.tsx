@@ -13,7 +13,12 @@ import {
   getScanHistory,
   ScanHistoryItem,
 } from '../../services/scanHistoryService';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  PAGE_HORIZONTAL_PADDING,
+  PAGE_TOP_PADDING,
+  TAB_BOTTOM_PADDING,
+} from '../../constants/layout';
 export default function ResultsHistoryScreen() {
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
 
@@ -45,9 +50,15 @@ export default function ResultsHistoryScreen() {
       ]
     );
   }
-
+const insets = useSafeAreaInsets();
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[
+    styles.container,
+    {
+      paddingTop: insets.top + 18,
+      paddingBottom: 130,
+    },
+  ]}>
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Scan History</Text>
@@ -113,11 +124,11 @@ function HistoryCard({ item }: { item: ScanHistoryItem }) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    gap: 16,
-    backgroundColor: '#FFF7F0',
-    flexGrow: 1,
-  },
+  paddingHorizontal: 20,
+  gap: 16,
+  backgroundColor: '#FFF7F0',
+  flexGrow: 1,
+},
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
