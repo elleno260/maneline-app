@@ -1,535 +1,487 @@
-import { useState } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  ScrollView,
+  ActivityIndicator,
   Alert,
-} from "react-native";
-import { router } from "expo-router";
-import { useAuthStore } from "../store/authStore";
-import { updateUserProfile } from "../services/userProfileService";
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const hairTypes = ["Straight", "Wavy", "Curly", "Coily", "Not sure"];
+import { waitForAuthUser } from '../services/authService';
+import { saveUserHairProfile } from '../services/profileFirebaseService';
 
-const porosityOptions = ["Low", "Medium", "High", "Not sure"];
+const hairTypeOptions = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '3C', '4A', '4B', '4C'];
+const porosityOptions = ['Low', 'Medium', 'High', 'Unsure'];
+const densityOptions = ['Fine', 'Medium', 'Thick', 'Unsure'];
+const scalpOptions = ['Balanced', 'Dry', 'Oily', 'Sensitive', 'Flaky'];
 
-const densityOptions = ["Low", "Medium", "High", "Not sure"];
-
-const hairGoals = [
-  "Moisture",
-  "Growth",
-  "Definition",
-  "Frizz control",
-  "Scalp health",
-  "Damage repair",
-  "Volume",
-  "Length retention",
-  "Color protection",
+const goalOptions = [
+  'Moisture',
+  'Length retention',
+  'Growth',
+  'Thickness',
+  'Scalp health',
+  'Definition',
+  'Repair',
+  'Heat protection',
+  'Color care',
 ];
 
-const skinToneOptions = [
-  "Light",
-  "Medium light",
-  "Medium",
-  "Medium deep",
-  "Deep",
-];
-
-const avatarHairShapeOptions = [
-  "Straight",
-  "Wavy",
-  "Curly",
-  "Coily",
-  "Locs",
-  "Braids",
-  "Bald",
-];
-
-const avatarHairLengthOptions = [
-  "Buzz cut",
-  "Short",
-  "Chin length",
-  "Shoulder length",
-  "Mid-back",
-  "Long",
-];
-
-const avatarHairColorOptions = [
-  "Black",
-  "Brown",
-  "Blonde",
-  "Red",
-  "Gray",
-  "Colored/Dyed",
-];
-
-const shirtColorOptions = [
-  "Cream",
-  "Brown",
-  "Black",
-  "Pink",
-  "Green",
-  "Blue",
-  "Purple",
+const defaultRoutineSteps = [
+  {
+    id: 'cleanse',
+    title: 'Cleanse',
+    frequency: 'Every 7–10 days',
+    productType: 'Gentle shampoo or clarifying shampoo as needed',
+    note: 'Focus on removing buildup without stripping your hair.',
+  },
+  {
+    id: 'deep-condition',
+    title: 'Deep condition',
+    frequency: 'Weekly',
+    productType: 'Moisturizing deep conditioner',
+    note: 'Use heat or steam if your hair struggles to absorb moisture.',
+  },
+  {
+    id: 'leave-in',
+    title: 'Leave-in',
+    frequency: 'After every wash',
+    productType: 'Lightweight leave-in conditioner',
+    note: 'Apply in sections so product distributes evenly.',
+  },
+  {
+    id: 'seal-style',
+    title: 'Seal + style',
+    frequency: 'After moisturizing',
+    productType: 'Light cream, gel, or styler depending on your routine',
+    note: 'Avoid over-layering heavy products to reduce buildup.',
+  },
+  {
+    id: 'refresh',
+    title: 'Refresh',
+    frequency: 'Midweek or as needed',
+    productType: 'Water-based mist or light moisturizer',
+    note: 'Refresh only when your hair feels dry.',
+  },
 ];
 
 export default function HairProfileSetupScreen() {
-  const user = useAuthStore((state) => state.user);
+  const insets = useSafeAreaInsets();
 
-  const [hairType, setHairType] = useState("");
-  const [porosity, setPorosity] = useState("");
-  const [density, setDensity] = useState("");
-  const [goals, setGoals] = useState<string[]>([]);
-
-  const [skinTone, setSkinTone] = useState("");
-  const [avatarHairShape, setAvatarHairShape] = useState("");
-  const [avatarHairLength, setAvatarHairLength] = useState("");
-  const [avatarHairColor, setAvatarHairColor] = useState("");
-  const [shirtColor, setShirtColor] = useState("");
-
-  const [isSaving, setIsSaving] = useState(false);
+  const [hairType, setHairType] = useState('4C');
+  const [porosity, setPorosity] = useState('Low');
+  const [density, setDensity] = useState('Fine');
+  const [scalp, setScalp] = useState('Dry');
+  const [goals, setGoals] = useState<string[]>([
+    'Moisture',
+    'Length retention',
+  ]);
+  const [allergies, setAllergies] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function toggleGoal(goal: string) {
-    if (goals.includes(goal)) {
-      setGoals(goals.filter((item) => item !== goal));
-    } else {
-      setGoals([...goals, goal]);
-    }
+    setGoals((currentGoals) => {
+      if (currentGoals.includes(goal)) {
+        return currentGoals.filter((item) => item !== goal);
+      }
+
+      return [...currentGoals, goal];
+    });
   }
 
   async function handleSaveProfile() {
-    if (!user) {
-      Alert.alert("Error", "No user is signed in.");
-      return;
-    }
-
-    if (
-      !hairType ||
-      !porosity ||
-      !density ||
-      goals.length === 0 ||
-      !skinTone ||
-      !avatarHairShape ||
-      !avatarHairLength ||
-      !avatarHairColor ||
-      !shirtColor
-    ) {
+    if (!hairType || !porosity || !density || !scalp) {
       Alert.alert(
-        "Almost there",
-        "Please complete your hair profile and avatar setup so we can personalize your experience."
+        'Missing information',
+        'Please complete your hair type, porosity, density, and scalp profile.'
       );
       return;
     }
 
-    try {
-      setIsSaving(true);
+    if (goals.length === 0) {
+      Alert.alert(
+        'Choose at least one goal',
+        'Select at least one hair goal so ManeLine can personalize your product matches.'
+      );
+      return;
+    }
 
-      await updateUserProfile(user.uid, {
+    setSaving(true);
+
+    try {
+      const user = await waitForAuthUser();
+
+      if (!user) {
+        Alert.alert(
+          'Sign in required',
+          'Please sign in before saving your hair profile.'
+        );
+        router.replace('/login' as never);
+        return;
+      }
+
+      await saveUserHairProfile({
+        displayName: user.displayName ?? user.email?.split('@')[0] ?? 'User',
+        email: user.email ?? '',
         hairType,
         porosity,
         density,
+        scalp,
         goals,
-        onboardingComplete: true,
-        avatar: {
-          skinTone,
-          hairShape: avatarHairShape,
-          hairLength: avatarHairLength,
-          hairColor: avatarHairColor,
-          shirtColor,
-        },
+        allergies: allergies.trim(),
+        routineFocus:
+          'Build a routine that supports my hair goals and helps ManeLine recommend better products.',
+        routineCompatibilityScore: 0,
+        routineSteps: defaultRoutineSteps,
       });
 
-      router.replace("/(tabs)");
-    } catch (error: any) {
-      Alert.alert("Profile Error", error.message);
+      Alert.alert('Profile saved', 'Your hair profile is ready.', [
+        {
+          text: 'Continue',
+          onPress: () => router.replace('/(tabs)/scan' as never),
+        },
+      ]);
+    } catch (error) {
+      console.warn('Could not save hair profile:', error);
+
+      Alert.alert(
+        'Profile not saved',
+        'We could not save your hair profile. Please make sure you are signed in and try again.'
+      );
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Set up your hair profile</Text>
-
-      <Text style={styles.subtitle}>
-        Answer a few questions so ManeLine can personalize product suggestions,
-        ingredient insights, and your in-app avatar.
-      </Text>
-
-      <Text style={styles.sectionTitle}>What is your hair type?</Text>
-      <View style={styles.optionGroup}>
-        {hairTypes.map((type) => (
-          <Pressable
-            key={type}
-            style={[styles.option, hairType === type && styles.selectedOption]}
-            onPress={() => setHairType(type)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                hairType === type && styles.selectedOptionText,
-              ]}
-            >
-              {type}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>What is your hair porosity?</Text>
-      <Text style={styles.helperText}>
-        Porosity helps the app understand how your hair absorbs and holds
-        moisture.
-      </Text>
-      <View style={styles.optionGroup}>
-        {porosityOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[
-              styles.option,
-              porosity === option && styles.selectedOption,
-            ]}
-            onPress={() => setPorosity(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                porosity === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>What is your hair density?</Text>
-      <Text style={styles.helperText}>
-        Density helps determine whether lightweight or heavier products may work
-        better for you.
-      </Text>
-      <View style={styles.optionGroup}>
-        {densityOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[styles.option, density === option && styles.selectedOption]}
-            onPress={() => setDensity(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                density === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>What are your hair goals?</Text>
-      <Text style={styles.helperText}>Select all that apply.</Text>
-      <View style={styles.optionGroup}>
-        {hairGoals.map((goal) => (
-          <Pressable
-            key={goal}
-            style={[styles.option, goals.includes(goal) && styles.selectedOption]}
-            onPress={() => toggleGoal(goal)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                goals.includes(goal) && styles.selectedOptionText,
-              ]}
-            >
-              {goal}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.divider} />
-
-      <Text style={styles.titleSmall}>Create your avatar</Text>
-      <Text style={styles.subtitleSmall}>
-        Customize your profile avatar. This is separate from your hair
-        recommendation profile.
-      </Text>
-
-      <Text style={styles.sectionTitle}>Choose your skin tone</Text>
-      <View style={styles.optionGroup}>
-        {skinToneOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[styles.option, skinTone === option && styles.selectedOption]}
-            onPress={() => setSkinTone(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                skinTone === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Choose your avatar hair shape</Text>
-      <View style={styles.optionGroup}>
-        {avatarHairShapeOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[
-              styles.option,
-              avatarHairShape === option && styles.selectedOption,
-            ]}
-            onPress={() => setAvatarHairShape(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                avatarHairShape === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Choose your avatar hair length</Text>
-      <View style={styles.optionGroup}>
-        {avatarHairLengthOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[
-              styles.option,
-              avatarHairLength === option && styles.selectedOption,
-            ]}
-            onPress={() => setAvatarHairLength(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                avatarHairLength === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Choose your avatar hair color</Text>
-      <View style={styles.optionGroup}>
-        {avatarHairColorOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[
-              styles.option,
-              avatarHairColor === option && styles.selectedOption,
-            ]}
-            onPress={() => setAvatarHairColor(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                avatarHairColor === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Choose your shirt color</Text>
-      <View style={styles.optionGroup}>
-        {shirtColorOptions.map((option) => (
-          <Pressable
-            key={option}
-            style={[styles.option, shirtColor === option && styles.selectedOption]}
-            onPress={() => setShirtColor(option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                shirtColor === option && styles.selectedOptionText,
-              ]}
-            >
-              {option}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.avatarPreview}>
-        <Text style={styles.avatarTitle}>Avatar Preview</Text>
-
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarEmoji}>
-            {avatarHairShape === "Curly" || avatarHairShape === "Coily"
-              ? "🧑‍🦱"
-              : avatarHairShape === "Bald"
-              ? "👤"
-              : "🧑"}
+    <View style={styles.screen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + 18,
+            paddingBottom: 130,
+          },
+        ]}
+      >
+        <View style={styles.hero}>
+          <Text style={styles.eyebrow}>Hair Profile</Text>
+          <Text style={styles.title}>Tell ManeLine about your hair.</Text>
+          <Text style={styles.subtitle}>
+            Your profile helps ManeLine score products, explain ingredients, and
+            build better recommendations for your actual routine.
           </Text>
         </View>
 
-        <Text style={styles.avatarText}>
-          Skin tone: {skinTone || "Not selected"}
-        </Text>
+        <Section title="Hair type" subtitle="Choose the pattern closest to your hair.">
+          <ChipGroup
+            options={hairTypeOptions}
+            selectedValue={hairType}
+            onSelect={setHairType}
+          />
+        </Section>
 
-        <Text style={styles.avatarText}>
-          Hair: {avatarHairColor || "Color"} •{" "}
-          {avatarHairShape || "Shape"} • {avatarHairLength || "Length"}
-        </Text>
+        <Section
+          title="Porosity"
+          subtitle="This helps ManeLine understand how your hair absorbs moisture."
+        >
+          <ChipGroup
+            options={porosityOptions}
+            selectedValue={porosity}
+            onSelect={setPorosity}
+          />
+        </Section>
 
-        <Text style={styles.avatarText}>
-          Shirt: {shirtColor || "Not selected"}
-        </Text>
-      </View>
+        <Section
+          title="Density"
+          subtitle="This helps avoid product recommendations that may feel too heavy or too light."
+        >
+          <ChipGroup
+            options={densityOptions}
+            selectedValue={density}
+            onSelect={setDensity}
+          />
+        </Section>
 
-      <Pressable
-        style={[styles.saveButton, isSaving && styles.disabledButton]}
-        onPress={handleSaveProfile}
-        disabled={isSaving}
-      >
-        <Text style={styles.saveButtonText}>
-          {isSaving ? "Saving..." : "Save Hair Profile"}
-        </Text>
-      </Pressable>
-    </ScrollView>
+        <Section
+          title="Scalp"
+          subtitle="Your scalp needs matter when recommending shampoos, oils, and treatments."
+        >
+          <ChipGroup
+            options={scalpOptions}
+            selectedValue={scalp}
+            onSelect={setScalp}
+          />
+        </Section>
+
+        <Section
+          title="Hair goals"
+          subtitle="Pick everything you want ManeLine to consider."
+        >
+          <View style={styles.chipWrap}>
+            {goalOptions.map((goal) => {
+              const selected = goals.includes(goal);
+
+              return (
+                <Pressable
+                  key={goal}
+                  onPress={() => toggleGoal(goal)}
+                  style={[styles.chip, selected && styles.chipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selected && styles.chipTextActive,
+                    ]}
+                  >
+                    {goal}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Section>
+
+        <Section
+          title="Allergies or sensitivities"
+          subtitle="Optional. Add anything ManeLine should avoid."
+        >
+          <TextInput
+            value={allergies}
+            onChangeText={setAllergies}
+            placeholder="Example: coconut oil, glycerin sensitivity, protein sensitivity"
+            placeholderTextColor="#9CA3AF"
+            style={styles.input}
+            multiline
+          />
+        </Section>
+
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryIcon}>
+            <Ionicons name="sparkles-outline" size={24} color="#111827" />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.summaryTitle}>What happens next?</Text>
+            <Text style={styles.summaryText}>
+              After saving, scan a product barcode. ManeLine will compare the
+              product to this profile and save your result to History.
+            </Text>
+          </View>
+        </View>
+
+        <Pressable
+          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={handleSaveProfile}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Text style={styles.saveButtonText}>Save hair profile</Text>
+              <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+            </>
+          )}
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+      {children}
+    </View>
+  );
+}
+
+function ChipGroup({
+  options,
+  selectedValue,
+  onSelect,
+}: {
+  options: string[];
+  selectedValue: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <View style={styles.chipWrap}>
+      {options.map((option) => {
+        const selected = selectedValue === option;
+
+        return (
+          <Pressable
+            key={option}
+            onPress={() => onSelect(option)}
+            style={[styles.chip, selected && styles.chipActive]}
+          >
+            <Text style={[styles.chipText, selected && styles.chipTextActive]}>
+              {option}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    backgroundColor: "#FFF8F1",
-    flexGrow: 1,
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFF7F0',
+  },
+  content: {
+    paddingHorizontal: 20,
+  },
+  hero: {
+    backgroundColor: '#111827',
+    borderRadius: 34,
+    padding: 22,
+    marginBottom: 18,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FBBF24',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#2F1B12",
-    marginBottom: 8,
+    marginTop: 8,
+    fontSize: 34,
+    lineHeight: 39,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   subtitle: {
-    fontSize: 16,
-    color: "#6B4E3D",
-    marginBottom: 28,
-    lineHeight: 22,
-  },
-  titleSmall: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#2F1B12",
-    marginBottom: 8,
-  },
-  subtitleSmall: {
+    marginTop: 10,
     fontSize: 15,
-    color: "#6B4E3D",
-    marginBottom: 22,
-    lineHeight: 21,
+    lineHeight: 22,
+    color: '#E5E7EB',
+    fontWeight: '700',
+  },
+  section: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2F1B12",
-    marginTop: 20,
-    marginBottom: 10,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#111827',
   },
-  helperText: {
-    fontSize: 14,
-    color: "#6B4E3D",
-    marginBottom: 10,
-    lineHeight: 20,
-  },
-  optionGroup: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  option: {
-    borderWidth: 1,
-    borderColor: "#D7C1AF",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    marginBottom: 8,
-  },
-  selectedOption: {
-    backgroundColor: "#2F1B12",
-    borderColor: "#2F1B12",
-  },
-  optionText: {
-    color: "#2F1B12",
-    fontWeight: "500",
-  },
-  selectedOptionText: {
-    color: "#FFFFFF",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#E2D2C3",
-    marginTop: 30,
-    marginBottom: 26,
-  },
-  avatarPreview: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 20,
-    alignItems: "center",
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: "#E2D2C3",
-  },
-  avatarTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2F1B12",
-    marginBottom: 10,
-  },
-  avatarCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#FFF8F1",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E2D2C3",
-  },
-  avatarEmoji: {
-    fontSize: 56,
-  },
-  avatarText: {
-    fontSize: 14,
-    color: "#6B4E3D",
-    textAlign: "center",
+  sectionSubtitle: {
     marginTop: 4,
+    marginBottom: 14,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#6B7280',
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  chip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    backgroundColor: '#FFF7F0',
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  chipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  chipTextActive: {
+    color: '#FFFFFF',
+  },
+  input: {
+    minHeight: 86,
+    backgroundColor: '#FFF7F0',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#111827',
+    textAlignVertical: 'top',
+  },
+  summaryCard: {
+    backgroundColor: '#F3D5C0',
+    borderRadius: 28,
+    padding: 17,
+    marginTop: 4,
+    marginBottom: 16,
+    flexDirection: 'row',
+    gap: 13,
+    alignItems: 'flex-start',
+  },
+  summaryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  summaryText: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#4B5563',
+    fontWeight: '700',
   },
   saveButton: {
-    backgroundColor: "#2F1B12",
-    padding: 16,
-    borderRadius: 16,
-    alignItems: "center",
-    marginTop: 32,
-    marginBottom: 30,
+    backgroundColor: '#D97706',
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
-  disabledButton: {
-    opacity: 0.6,
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
   saveButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
+    color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '900',
   },
 });

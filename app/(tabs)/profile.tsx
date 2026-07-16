@@ -410,9 +410,9 @@ contentContainerStyle={[
             <Text style={styles.routineTitle}>Routine focus</Text>
             <Text style={styles.routineText}>{profile.routineFocus}</Text>
 
-            <Pressable onPress={openEditor}>
+            <Pressable onPress={() => router.push('/routine' as never)}>
               <Text style={styles.editRoutineText}>Edit routine</Text>
-            </Pressable>
+              </Pressable>
           </View>
         </View>
 
@@ -425,8 +425,9 @@ contentContainerStyle={[
           </View>
 
           <Text style={styles.compatibilityText}>
-            Your routine currently aligns with your profile and goals. As you
-            scan more products, this score can become more personalized.
+            This score reflects how well your current routine supports your hair type,
+  porosity, scalp needs, and goals. It will become smarter as you scan more
+  products.
           </Text>
         </View>
 

@@ -1,39 +1,66 @@
-import {
-  createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,} from "firebase/auth";
-import { auth } from "../firebaseConfig";
-import { createUserProfile } from "./userProfileService";
+import { auth } from '../firebaseConfig';
+import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth';
 
-export async function registerUser(email: string, password: string) {
-  const userCredential = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
+const AUTH_WAIT_TIMEOUT_MS = 3000;
 
-  await createUserProfile(userCredential.user.uid, {
-    email: userCredential.user.email,
-    hairType: "",
-    porosity: "",
-    density: "",
-    goals: [],
+function waitForInitialAuthState(): Promise<User | null> {
+  if (auth.currentUser) {
+    return Promise.resolve(auth.currentUser);
+  }
 
-    onboardingComplete: false,
-    avatar: {
-      skinTone: "",
-      hairShape: "",
-      hairLength: "",
-      hairColor: "",
-      shirtColor: "",
-    },
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(user);
+      }
+    });
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        unsubscribe();
+        resolve(auth.currentUser ?? null);
+      }
+    }, AUTH_WAIT_TIMEOUT_MS);
   });
-
-  return userCredential;
 }
 
-export async function loginUser(email: string, password: string) {
-  return await signInWithEmailAndPassword(auth, email, password);
+export async function getOrCreateGuestUser(): Promise<User> {
+  const existingUser = await waitForInitialAuthState();
+
+  if (existingUser) {
+    return existingUser;
+  }
+
+  const credential = await signInAnonymously(auth);
+  return credential.user;
 }
 
-export async function logoutUser() {
-  return await signOut(auth);
+export async function waitForAuthUser(): Promise<User | null> {
+  try {
+    return await getOrCreateGuestUser();
+  } catch (error) {
+    console.warn('Guest auth failed:', error);
+    return null;
+  }
+}
+
+export async function getCurrentUserIdOrThrow() {
+  const user = await getOrCreateGuestUser();
+  return user.uid;
+}
+
+export async function getCurrentUserEmail() {
+  const user = await waitForAuthUser();
+  return user?.email ?? '';
+}
+
+export async function isSignedIn() {
+  const user = await waitForAuthUser();
+  return !!user;
 }

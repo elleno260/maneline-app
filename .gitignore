@@ -33,6 +33,7 @@ firebase-debug.log
 **/google-services.json
 **/GoogleService-Info.plist
 **/firebase-debug.log
+serviceAccountKey.json
 
 # TypeScript
 *.tsbuildinfo

@@ -1,224 +1,205 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
-import Anthropic from "@anthropic-ai/sdk";
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 
-admin.initializeApp();
+const INCI_API_KEY = defineSecret('INCI_API_KEY');
 
-type EnrichedIngredient = {
-  originalName: string;
-  normalizedName: string;
+type ExternalProductLookupResult = {
   found: boolean;
-  data?: {
-    name: string;
-    function: string;
-    category: string;
-    description: string;
-    safetyRating: string;
-    safetyScore: number;
-    porosityCompatibility?: {
-      low?: string;
-      medium?: string;
-      high?: string;
-    };
-    hairTypeFlags?: {
-      straight?: string;
-      wavy?: string;
-      curly?: string;
-      coily?: string;
-    };
-    concerns?: string[];
-    benefits?: string[];
-    avoidIf?: string[];
-    goodFor?: string[];
-  };
-};
-
-type AnalyzeScanPayload = {
-  barcode?: string;
-  productName?: string;
+  source: 'inci-beauty';
+  barcode: string;
+  name?: string;
   brand?: string;
-  rawIngredientsText: string;
-  enrichedIngredients: EnrichedIngredient[];
-  scanSource: "barcode" | "ocr" | "manual";
+  category?: string;
+  description?: string;
+  ingredients: string[];
+  imageUrl?: string;
+  raw?: unknown;
 };
 
-function buildPrompt(params: {
-  hairProfile: FirebaseFirestore.DocumentData | null;
-  payload: AnalyzeScanPayload;
-}) {
-  const { hairProfile, payload } = params;
+function parseIngredientString(ingredientText?: string | null): string[] {
+  if (!ingredientText) return [];
 
-  return `
-You are ManeLine's hair product ingredient analysis assistant.
+  return ingredientText
+    .replace(/\n/g, ',')
+    .split(',')
+    .map((ingredient) => ingredient.trim())
+    .filter(Boolean)
+    .map((ingredient) =>
+      ingredient.replace(/\.$/, '').replace(/\s+/g, ' ').trim()
+    );
+}
 
-Your job:
-Analyze a hair product's ingredients using the user's hair profile and ManeLine's ingredient database.
-Give a clear, plain-language explanation.
-Do not diagnose medical conditions.
-Do not make medical claims.
-Do not exaggerate risk.
-If data is missing, say that clearly.
+function extractIngredients(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String).map((item) => item.trim()).filter(Boolean);
+  }
 
-User hair profile:
-${JSON.stringify(
-  {
-    hairType: hairProfile?.hairType ?? "unknown",
-    porosity: hairProfile?.porosity ?? "unknown",
-    density: hairProfile?.density ?? "unknown",
-    goals: hairProfile?.goals ?? [],
-  },
-  null,
-  2
-)}
+  if (typeof value === 'string') {
+    return parseIngredientString(value);
+  }
 
-Product:
-${JSON.stringify(
-  {
-    productName: payload.productName ?? "Unknown product",
-    brand: payload.brand ?? "",
-    barcode: payload.barcode ?? "",
-    scanSource: payload.scanSource,
-  },
-  null,
-  2
-)}
+  return [];
+}
 
-Raw ingredients text:
-${payload.rawIngredientsText}
-
-ManeLine enriched ingredient database results:
-${JSON.stringify(payload.enrichedIngredients, null, 2)}
-
-Return ONLY valid JSON in this exact shape:
-{
-  "summary": "short overall plain-language summary",
-  "compatibilityScore": 0,
-  "recommendation": "use",
-  "why": ["reason 1", "reason 2", "reason 3"],
-  "ingredientHighlights": [
-    {
-      "ingredient": "ingredient name",
-      "rating": "good",
-      "explanation": "plain-language explanation"
+function getFirstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
     }
-  ],
-  "bestFor": ["hair profile or goal this product may support"],
-  "watchOutFor": ["concerns or cautions"],
-  "routineTip": "one practical usage tip"
+  }
+
+  return undefined;
 }
 
-Rules:
-- compatibilityScore must be a number from 0 to 100.
-- recommendation must be one of: "use", "use_with_caution", "avoid", "not_enough_information".
-- ingredient rating must be one of: "good", "okay", "caution", "avoid", "unknown".
-`;
+function getFirstArrayValue(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const firstValue = value.find(
+    (item) => typeof item === 'string' && item.trim().length > 0
+  );
+
+  return typeof firstValue === 'string' ? firstValue.trim() : undefined;
 }
 
-export const analyzeScanWithAI = onCall(
+export const lookupInciProduct = onCall(
   {
-    region: "us-central1",
-    timeoutSeconds: 60,
-    memory: "512MiB",
+    secrets: [INCI_API_KEY],
+    region: 'us-central1',
+    timeoutSeconds: 30,
+    memory: '256MiB',
   },
-  async (request) => {
+  async (request): Promise<ExternalProductLookupResult> => {
     if (!request.auth) {
-      throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-
-    const uid = request.auth.uid;
-    const payload = request.data as AnalyzeScanPayload;
-
-    if (!payload.rawIngredientsText) {
       throw new HttpsError(
-        "invalid-argument",
-        "Missing rawIngredientsText."
+        'unauthenticated',
+        'You must be signed in to look up products.'
       );
     }
 
-    if (!payload.enrichedIngredients) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Missing enrichedIngredients."
-      );
+    const barcode = String(request.data?.barcode ?? '').trim();
+
+    if (!barcode) {
+      throw new HttpsError('invalid-argument', 'Barcode is required.');
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const baseUrl = process.env.INCI_API_BASE_URL ?? 'https://inciapi.com/v1';
+    const apiKey = INCI_API_KEY.value();
 
     if (!apiKey) {
       throw new HttpsError(
-        "failed-precondition",
-        "Missing ANTHROPIC_API_KEY in functions environment."
+        'failed-precondition',
+        'INCI API key is not configured.'
       );
     }
 
-    const userProfileSnap = await admin
-      .firestore()
-      .collection("users")
-      .doc(uid)
-      .get();
+    const url = `${baseUrl.replace(/\/$/, '')}/products/${encodeURIComponent(
+      barcode
+    )}`;
 
-    const hairProfile = userProfileSnap.exists
-      ? userProfileSnap.data() ?? null
-      : null;
-
-    const anthropic = new Anthropic({
-      apiKey,
-    });
-
-    const prompt = buildPrompt({
-      hairProfile,
-      payload,
-    });
-
-    const message = await anthropic.messages.create({
-      model: "claude-3-5-haiku-latest",
-      max_tokens: 1200,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const textBlock = message.content.find((block) => block.type === "text");
-
-    if (!textBlock || textBlock.type !== "text") {
-      throw new HttpsError("internal", "Claude did not return text.");
-    }
-
-    let aiResult;
+    let response: Response;
 
     try {
-      aiResult = JSON.parse(textBlock.text);
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'X-API-Key': apiKey,
+        },
+      });
     } catch (error) {
-      console.error("Claude JSON parse error:", textBlock.text);
+      console.error('INCI API network error:', error);
 
       throw new HttpsError(
-        "internal",
-        "Claude returned a response that was not valid JSON."
+        'unavailable',
+        'Could not connect to the INCI API.'
       );
     }
 
-    const scanHistoryRef = await admin
-      .firestore()
-      .collection("users")
-      .doc(uid)
-      .collection("scanHistory")
-      .add({
-        barcode: payload.barcode ?? null,
-        productName: payload.productName ?? null,
-        brand: payload.brand ?? null,
-        scanSource: payload.scanSource,
-        rawIngredientsText: payload.rawIngredientsText,
-        enrichedIngredients: payload.enrichedIngredients,
-        aiResult,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    if (response.status === 404) {
+      return {
+        found: false,
+        source: 'inci-beauty',
+        barcode,
+        ingredients: [],
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+
+      console.error('INCI API request failed:', {
+        status: response.status,
+        body: errorText,
       });
 
+      throw new HttpsError(
+        'internal',
+        `INCI API request failed with status ${response.status}.`
+      );
+    }
+
+    const data = await response.json();
+
+    const product = data?.product ?? data;
+
+    if (!product) {
+      return {
+        found: false,
+        source: 'inci-beauty',
+        barcode,
+        ingredients: [],
+        raw: data,
+      };
+    }
+
+    const detailsIngredients = extractIngredients(product.details?.inci);
+    const productIngredients = extractIngredients(product.ingredients);
+    const compositionIngredients = extractIngredients(product.composition);
+    const inciIngredients = extractIngredients(product.inci);
+
+    const ingredients =
+      detailsIngredients.length > 0
+        ? detailsIngredients
+        : productIngredients.length > 0
+          ? productIngredients
+          : compositionIngredients.length > 0
+            ? compositionIngredients
+            : inciIngredients;
+
+    if (ingredients.length === 0) {
+      return {
+        found: false,
+        source: 'inci-beauty',
+        barcode,
+        ingredients: [],
+        raw: data,
+      };
+    }
+
+    const category =
+      getFirstArrayValue(product.category) ??
+      getFirstString(product.category, product.categories) ??
+      'Styler';
+
+    const imageUrl =
+      getFirstArrayValue(product.imageUrls) ??
+      getFirstString(product.image_url, product.image, data.image_url);
+
     return {
-      scanHistoryId: scanHistoryRef.id,
-      aiResult,
+      found: true,
+      source: 'inci-beauty',
+      barcode,
+      name:
+        getFirstString(product.name, product.product_name, data.name) ??
+        'Unknown product',
+      brand:
+        getFirstString(product.brand, product.brands, data.brand) ??
+        'Unknown brand',
+      category,
+      description: 'Product data imported from INCI API.',
+      ingredients,
+      imageUrl,
+      raw: data,
     };
   }
 );

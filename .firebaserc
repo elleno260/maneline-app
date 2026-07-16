@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "maneline-bba75"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

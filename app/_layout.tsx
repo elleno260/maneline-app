@@ -9,6 +9,19 @@ export default function RootLayout() {
       <Stack.Screen name="editAvatar" />
       <Stack.Screen name="review-scan" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="routine"
+                    options={{
+                      title: 'Edit Routine',
+                      headerBackTitle: 'Back',
+                      headerStyle: {
+                        backgroundColor: '#FFF7F0',
+                      },
+                      headerTintColor: '#111827',
+                      headerTitleStyle: {
+                        fontWeight: '900',
+                      },
+  }}
+/>
     </Stack>
   );
 }

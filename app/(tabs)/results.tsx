@@ -1,225 +1,351 @@
-import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import {
-  clearScanHistory,
-  getScanHistory,
-  ScanHistoryItem,
-} from '../../services/scanHistoryService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  PAGE_HORIZONTAL_PADDING,
-  PAGE_TOP_PADDING,
-  TAB_BOTTOM_PADDING,
-} from '../../constants/layout';
-export default function ResultsHistoryScreen() {
-  const [history, setHistory] = useState<ScanHistoryItem[]>([]);
 
-  async function loadHistory() {
-    const scans = await getScanHistory();
-    setHistory(scans);
+import {
+  getScanHistoryFromFirebase,
+  ScanHistoryItem,
+} from '../../services/scanHistoryFirebaseService';
+
+function formatDate(isoDate: string) {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(new Date(isoDate));
+  } catch {
+    return 'Recently scanned';
   }
+}
+
+export default function ResultsScreen() {
+  const insets = useSafeAreaInsets();
+
+  const [history, setHistory] = useState<ScanHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const scans = await getScanHistoryFromFirebase();
+      setHistory(scans);
+    } catch (error) {
+      console.warn('Could not load scan history:', error);
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       loadHistory();
-    }, [])
+    }, [loadHistory])
   );
 
-  async function handleClearHistory() {
-    Alert.alert(
-      'Clear scan history?',
-      'This will remove all saved scanned products from this device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            await clearScanHistory();
-            setHistory([]);
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + 18,
+            paddingBottom: 140,
           },
-        },
-      ]
-    );
-  }
-const insets = useSafeAreaInsets();
-  return (
-    <ScrollView contentContainerStyle={[
-    styles.container,
-    {
-      paddingTop: insets.top + 18,
-      paddingBottom: 130,
-    },
-  ]}>
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.title}>Scan History</Text>
+        ]}
+      >
+        <View style={styles.hero}>
+          <Text style={styles.eyebrow}>Scan History</Text>
+          <Text style={styles.title}>Your product decisions, saved.</Text>
           <Text style={styles.subtitle}>
-            Access products you previously scanned.
+            Every scan helps ManeLine understand what works for your hair,
+            routine, and goals.
           </Text>
         </View>
 
-        {history.length > 0 && (
-          <Pressable onPress={handleClearHistory}>
-            <Text style={styles.clearText}>Clear</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {history.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No scans yet</Text>
-          <Text style={styles.emptyText}>
-            Once you scan a product, it will appear here with its compatibility
-            score, summary, and ingredient notes.
-          </Text>
-        </View>
-      ) : (
-        history.map((item) => <HistoryCard key={item.id} item={item} />)
-      )}
-    </ScrollView>
-  );
-}
-
-function HistoryCard({ item }: { item: ScanHistoryItem }) {
-  const date = new Date(item.scannedAt).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.productName}>{item.productName}</Text>
-          {!!item.brand && <Text style={styles.brand}>{item.brand}</Text>}
-        </View>
-
-        {typeof item.compatibilityScore === 'number' && (
-          <View style={styles.scorePill}>
-            <Text style={styles.scoreText}>{item.compatibilityScore}%</Text>
+        {loading ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color="#111827" />
+            <Text style={styles.loadingText}>Loading scan history...</Text>
           </View>
-        )}
-      </View>
+        ) : null}
 
-      <Text style={styles.dateText}>Scanned {date}</Text>
-      <Text style={styles.summary}>{item.summary}</Text>
+        {!loading && history.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="scan-outline" size={38} color="#111827" />
+            <Text style={styles.emptyTitle}>No scans yet</Text>
+            <Text style={styles.emptyText}>
+              Scan your first product to start building your product history and
+              improve your recommendations.
+            </Text>
 
-      <Text style={styles.ingredientsTitle}>Ingredients noted</Text>
-      <Text style={styles.ingredients}>
-        {item.ingredients.slice(0, 5).join(', ')}
-      </Text>
+            <Pressable
+              style={styles.emptyButton}
+              onPress={() => router.push('/(tabs)/scan' as never)}
+            >
+              <Text style={styles.emptyButtonText}>Scan a product</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ) : null}
+
+        {history.map((item) => (
+          <View key={item.id} style={styles.historyCard}>
+            <View style={styles.cardTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.brand}>{item.brand ?? 'Saved scan'}</Text>
+                <Text style={styles.productName}>{item.productName}</Text>
+                <Text style={styles.dateText}>{formatDate(item.scannedAt)}</Text>
+              </View>
+
+              {item.compatibilityScore ? (
+                <View style={styles.scoreBadge}>
+                  <Text style={styles.scoreText}>
+                    {item.compatibilityScore}%
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {item.compatibilityLabel ? (
+              <Text style={styles.label}>{item.compatibilityLabel}</Text>
+            ) : null}
+
+            <Text style={styles.summary}>{item.summary}</Text>
+
+            {item.routineFit ? (
+              <View style={styles.routineBox}>
+                <Text style={styles.routineTitle}>Routine fit</Text>
+                <Text style={styles.routineText}>{item.routineFit}</Text>
+              </View>
+            ) : null}
+
+            {item.matchReasons?.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Why it matched</Text>
+                {item.matchReasons.slice(0, 3).map((reason) => (
+                  <Text key={reason} style={styles.bulletText}>
+                    • {reason}
+                  </Text>
+                ))}
+              </>
+            ) : null}
+
+            {item.cautions?.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Cautions</Text>
+                {item.cautions.slice(0, 2).map((caution) => (
+                  <Text key={caution} style={styles.cautionText}>
+                    • {caution}
+                  </Text>
+                ))}
+              </>
+            ) : null}
+
+            {item.ingredientHighlights?.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Ingredient notes</Text>
+                {item.ingredientHighlights.slice(0, 2).map((note) => (
+                  <Text key={note} style={styles.bulletText}>
+                    • {note}
+                  </Text>
+                ))}
+              </>
+            ) : null}
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-  paddingHorizontal: 20,
-  gap: 16,
-  backgroundColor: '#FFF7F0',
-  flexGrow: 1,
-},
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFF7F0',
+  },
+  content: {
+    paddingHorizontal: 20,
+  },
+  hero: {
+    backgroundColor: '#111827',
+    borderRadius: 32,
+    padding: 22,
+    marginBottom: 16,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FBBF24',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#111827',
+    marginTop: 8,
+    fontSize: 34,
+    lineHeight: 39,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   subtitle: {
-    marginTop: 4,
+    marginTop: 10,
     fontSize: 15,
-    color: '#6B7280',
+    lineHeight: 22,
+    color: '#E5E7EB',
+    fontWeight: '700',
   },
-  clearText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#B91C1C',
-    paddingTop: 8,
+  loadingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+  },
+  loadingText: {
+    color: '#6B7280',
+    fontWeight: '700',
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 22,
+    borderRadius: 30,
+    padding: 24,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F3D5C0',
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    marginTop: 12,
+    fontSize: 22,
+    fontWeight: '900',
     color: '#111827',
-    marginBottom: 6,
   },
   emptyText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4B5563',
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#6B7280',
+    textAlign: 'center',
   },
-  card: {
+  emptyButton: {
+    marginTop: 18,
+    backgroundColor: '#111827',
+    borderRadius: 18,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  historyCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 28,
     padding: 18,
-    gap: 10,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#F3D5C0',
   },
-  cardTop: {
+  cardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
   },
+  brand: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#D97706',
+    textTransform: 'uppercase',
+  },
   productName: {
-    fontSize: 18,
-    fontWeight: '800',
+    marginTop: 3,
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
     color: '#111827',
   },
-  brand: {
-    marginTop: 3,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  scorePill: {
-    backgroundColor: '#111827',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-  scoreText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
   dateText: {
+    marginTop: 3,
     fontSize: 13,
     color: '#6B7280',
   },
+  scoreBadge: {
+    backgroundColor: '#111827',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  scoreText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  label: {
+    marginTop: 13,
+    fontSize: 13,
+    color: '#D97706',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
   summary: {
+    marginTop: 8,
     fontSize: 15,
     lineHeight: 22,
     color: '#374151',
+    fontWeight: '600',
   },
-  ingredientsTitle: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '800',
+  routineBox: {
+    marginTop: 14,
+    backgroundColor: '#FFF7F0',
+    borderRadius: 18,
+    padding: 13,
+  },
+  routineTitle: {
+    fontSize: 13,
+    fontWeight: '900',
     color: '#111827',
   },
-  ingredients: {
+  routineText: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#6B7280',
+  },
+  sectionTitle: {
+    marginTop: 15,
+    marginBottom: 5,
     fontSize: 14,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  bulletText: {
+    fontSize: 13,
     lineHeight: 20,
     color: '#4B5563',
+    marginBottom: 3,
+  },
+  cautionText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#B45309',
+    marginBottom: 3,
+    fontWeight: '700',
   },
 });

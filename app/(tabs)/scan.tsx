@@ -1,5 +1,14 @@
+import { Ionicons } from '@expo/vector-icons';
+import {
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
+} from 'expo-camera';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -7,236 +16,565 @@ import {
   Text,
   View,
 } from 'react-native';
-import { saveScanToHistory, ScanHistoryItem } from '../../services/scanHistoryService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PAGE_HORIZONTAL_PADDING, PAGE_TOP_PADDING, TAB_BOTTOM_PADDING} from '../../constants/layout';
+
+import { generateProductExplanation } from '../../services/aiExplanationService';
+import { getOrCreateGuestUser } from '../../services/authService';
+import { calculateCompatibility } from '../../services/compatibilityService';
+import { getOrImportProductByBarcode } from '../../services/productFirebaseService';
+import { getUserHairProfileOrNull } from '../../services/profileFirebaseService';
+import {
+  buildScanHistoryItem,
+  saveScanToFirebaseHistory,
+  ScanHistoryItem,
+} from '../../services/scanHistoryFirebaseService';
+import { HairProduct } from '../../types/product.types';
+
 export default function ScanScreen() {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showPopup, setShowPopup] = useState(false);
-  const [latestScan, setLatestScan] = useState<ScanHistoryItem | null>(null);
-
-  async function handleDemoScan() {
-    setIsAnalyzing(true);
-    setShowPopup(true);
-
-    // This simulates the scan pipeline for now:
-    // barcode/OCR → ingredient parsing → AI compatibility summary → save history.
-    setTimeout(async () => {
-      const scan: ScanHistoryItem = {
-        id: Date.now().toString(),
-        productName: 'Sample Moisturizing Leave-In Conditioner',
-        brand: 'ManeLine Demo',
-        barcode: '0000000000',
-        scannedAt: new Date().toISOString(),
-        compatibilityScore: 86,
-        summary:
-          'This product looks like a strong match for moisture and softness. It may be better for wash-day styling than heavy daily use.',
-        ingredients: [
-          'Aloe Vera Juice',
-          'Behentrimonium Methosulfate',
-          'Cetyl Alcohol',
-          'Glycerin',
-          'Shea Butter',
-        ],
-        flags: [
-          {
-            label: 'Moisture-supporting ingredients found',
-            type: 'good',
-          },
-          {
-            label: 'Contains fatty alcohols, which can help softness',
-            type: 'good',
-          },
-          {
-            label: 'May feel heavy if overused on low-porosity hair',
-            type: 'caution',
-          },
-        ],
-      };
-
-      await saveScanToHistory(scan);
-      setLatestScan(scan);
-      setIsAnalyzing(false);
-    }, 1500);
-  }
   const insets = useSafeAreaInsets();
-  return (
-    <ScrollView contentContainerStyle={[styles.container,
-        {
-          paddingTop: insets.top + 18,
-          paddingBottom: 130,
-        },
-      ]}>
-      <Text style={styles.title}>Scan Product</Text>
-      <Text style={styles.subtitle}>
-        Scan a barcode or product label to analyze ingredients and save the item
-        to your scan history.
-      </Text>
+  const [permission, requestPermission] = useCameraPermissions();
 
-      <View style={styles.scanBox}>
-        <Text style={styles.scanIcon}>▢</Text>
-        <Text style={styles.scanText}>Camera scanner will go here</Text>
-        <Text style={styles.scanSubtext}>
-          For now, use demo scan to test the flow.
-        </Text>
+  const [scanned, setScanned] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [notFoundBarcode, setNotFoundBarcode] = useState<string | null>(null);
+  const [latestScan, setLatestScan] = useState<{
+    item: ScanHistoryItem;
+    product: HairProduct;
+  } | null>(null);
+
+  async function handleBarcodeScanned(result: BarcodeScanningResult) {
+    if (scanned || lookingUp) return;
+
+    setScanned(true);
+    setLookingUp(true);
+    setNotFoundBarcode(null);
+
+    const barcode = result.data?.trim();
+
+    if (!barcode) {
+      setLookingUp(false);
+      setScanned(false);
+      return;
+    }
+
+    try {
+      /**
+       * This silently creates a Firebase anonymous user.
+       * No login screen. No email/password. No demo-user.
+       */
+      await getOrCreateGuestUser();
+
+      const profile = await getUserHairProfileOrNull();
+
+      if (!profile) {
+        setLookingUp(false);
+        router.push('/hairProfileSetup' as never);
+        return;
+      }
+
+      const product = await getOrImportProductByBarcode(barcode);
+
+      if (!product) {
+        setNotFoundBarcode(barcode);
+        setLookingUp(false);
+        return;
+      }
+
+      const compatibility = calculateCompatibility(product, profile);
+
+      const explanation = await generateProductExplanation({
+        product,
+        profile,
+        compatibility,
+      });
+
+      const scanItem = buildScanHistoryItem({
+        productId: product.id,
+        productName: product.name,
+        brand: product.brand,
+        barcode,
+        ingredients: product.ingredients,
+        compatibility,
+        aiExplanation: explanation,
+      });
+
+      await saveScanToFirebaseHistory(scanItem);
+
+      setLatestScan({
+        item: scanItem,
+        product,
+      });
+    } catch (error) {
+      console.warn('Scan failed:', error);
+
+      Alert.alert(
+        'Scan failed',
+        'ManeLine could not finish this scan. Please check your connection and try again.'
+      );
+
+      setScanned(false);
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
+  function resetScanner() {
+    setScanned(false);
+    setNotFoundBarcode(null);
+    setLatestScan(null);
+  }
+
+  if (!permission) {
+    return (
+      <View style={styles.centeredScreen}>
+        <ActivityIndicator color="#111827" />
       </View>
+    );
+  }
 
-      <Pressable style={styles.button} onPress={handleDemoScan}>
-        <Text style={styles.buttonText}>Demo Scan Product</Text>
-      </Pressable>
+  if (!permission.granted) {
+    return (
+      <View style={styles.centeredScreen}>
+        <View style={styles.permissionCard}>
+          <Ionicons name="camera-outline" size={42} color="#111827" />
+          <Text style={styles.permissionTitle}>Camera access needed</Text>
+          <Text style={styles.permissionText}>
+            ManeLine needs your camera to scan product barcodes.
+          </Text>
 
-      <Modal visible={showPopup} transparent animationType="slide">
+          <Pressable style={styles.primaryButton} onPress={requestPermission}>
+            <Text style={styles.primaryButtonText}>Allow camera access</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + 18,
+            paddingBottom: 140,
+          },
+        ]}
+      >
+        <View style={styles.hero}>
+          <Text style={styles.eyebrow}>Scan</Text>
+          <Text style={styles.title}>Scan a product barcode.</Text>
+          <Text style={styles.subtitle}>
+            ManeLine looks up the product, reads its ingredients, compares it to
+            your hair profile, and saves the result to History.
+          </Text>
+        </View>
+
+        <View style={styles.cameraWrap}>
+          <CameraView
+            style={styles.camera}
+            facing="back"
+            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: [
+                'ean13',
+                'ean8',
+                'upc_a',
+                'upc_e',
+                'code128',
+                'code39',
+                'qr',
+              ],
+            }}
+          />
+
+          <View style={styles.scanFrame}>
+            <View style={styles.cornerTopLeft} />
+            <View style={styles.cornerTopRight} />
+            <View style={styles.cornerBottomLeft} />
+            <View style={styles.cornerBottomRight} />
+          </View>
+
+          {lookingUp ? (
+            <View style={styles.lookupOverlay}>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.lookupText}>Looking up product...</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.scanHelp}>
+          Hold the barcode inside the frame. If ManeLine finds the product
+          through Firebase or INCI API, it will analyze it automatically.
+        </Text>
+
+        {notFoundBarcode ? (
+          <View style={styles.notFoundCard}>
+            <Ionicons name="alert-circle-outline" size={30} color="#B45309" />
+            <Text style={styles.notFoundTitle}>Product not found</Text>
+            <Text style={styles.notFoundText}>
+              Barcode {notFoundBarcode} was not found yet. Later, this screen
+              can let users submit the product name and ingredient label.
+            </Text>
+
+            <Pressable style={styles.secondaryButton} onPress={resetScanner}>
+              <Text style={styles.secondaryButtonText}>Scan another product</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {scanned && !lookingUp && !notFoundBarcode && !latestScan ? (
+          <Pressable style={styles.secondaryButton} onPress={resetScanner}>
+            <Text style={styles.secondaryButtonText}>Scan again</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+
+      <Modal
+        visible={!!latestScan}
+        animationType="slide"
+        transparent
+        onRequestClose={resetScanner}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            {isAnalyzing ? (
+            {latestScan ? (
               <>
-                <Text style={styles.modalTitle}>Analyzing product...</Text>
-                <Text style={styles.modalText}>
-                  Checking ingredients, matching your hair profile, and saving
-                  this scan.
-                </Text>
-              </>
-            ) : latestScan ? (
-              <>
-                <Text style={styles.modalTitle}>{latestScan.productName}</Text>
-                <Text style={styles.score}>
-                  Compatibility: {latestScan.compatibilityScore}%
-                </Text>
-                <Text style={styles.modalText}>{latestScan.summary}</Text>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalEmoji}>
+                    {latestScan.product.imageEmoji ?? '🧴'}
+                  </Text>
 
-                <Text style={styles.sectionTitle}>Quick ingredient notes</Text>
+                  <Pressable onPress={resetScanner} hitSlop={10}>
+                    <Ionicons name="close" size={24} color="#111827" />
+                  </Pressable>
+                </View>
 
-                {latestScan.flags.map((flag, index) => (
-                  <View key={index} style={styles.flagRow}>
-                    <Text style={styles.flagDot}>
-                      {flag.type === 'good'
-                        ? '✓'
-                        : flag.type === 'caution'
-                        ? '!'
-                        : '•'}
-                    </Text>
-                    <Text style={styles.flagText}>{flag.label}</Text>
-                  </View>
+                <Text style={styles.modalBrand}>{latestScan.product.brand}</Text>
+                <Text style={styles.modalTitle}>{latestScan.product.name}</Text>
+
+                <View style={styles.modalScoreCard}>
+                  <Text style={styles.modalScore}>
+                    {latestScan.item.compatibilityScore}%
+                  </Text>
+                  <Text style={styles.modalScoreLabel}>
+                    {latestScan.item.compatibilityLabel}
+                  </Text>
+                </View>
+
+                <Text style={styles.modalSectionTitle}>ManeLine says</Text>
+                <Text style={styles.modalText}>{latestScan.item.summary}</Text>
+
+                <Text style={styles.modalSectionTitle}>Why it matched</Text>
+                {latestScan.item.matchReasons?.slice(0, 3).map((reason) => (
+                  <Text key={reason} style={styles.bulletText}>
+                    • {reason}
+                  </Text>
                 ))}
 
+                {latestScan.item.cautions?.length ? (
+                  <>
+                    <Text style={styles.modalSectionTitle}>Cautions</Text>
+                    {latestScan.item.cautions.slice(0, 2).map((caution) => (
+                      <Text key={caution} style={styles.bulletText}>
+                        • {caution}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+
                 <Pressable
-                  style={styles.button}
-                  onPress={() => setShowPopup(false)}
+                  style={styles.historyButton}
+                  onPress={() => {
+                    resetScanner();
+                    router.push('/(tabs)/results' as never);
+                  }}
                 >
-                  <Text style={styles.buttonText}>Done</Text>
+                  <Text style={styles.historyButtonText}>View history</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </Pressable>
               </>
             ) : null}
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 20,
-    gap: 18,
+  screen: {
+    flex: 1,
     backgroundColor: '#FFF7F0',
-    flexGrow: 1,
   },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  subtitle: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#4B5563',
-  },
-  scanBox: {
-    height: 300,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: '#111827',
-    borderStyle: 'dashed',
+  centeredScreen: {
+    flex: 1,
+    backgroundColor: '#FFF7F0',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
     padding: 24,
   },
-  scanIcon: {
-    fontSize: 52,
-    marginBottom: 12,
+  content: {
+    paddingHorizontal: 20,
   },
-  scanText: {
-    fontSize: 18,
+  hero: {
+    backgroundColor: '#111827',
+    borderRadius: 34,
+    padding: 22,
+    marginBottom: 16,
+  },
+  eyebrow: {
+    fontSize: 12,
+    color: '#FBBF24',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontWeight: '900',
+  },
+  title: {
+    marginTop: 8,
+    fontSize: 35,
+    lineHeight: 40,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    marginTop: 10,
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#E5E7EB',
     fontWeight: '700',
+  },
+  cameraWrap: {
+    height: 360,
+    borderRadius: 34,
+    overflow: 'hidden',
+    backgroundColor: '#111827',
+    position: 'relative',
+  },
+  camera: {
+    flex: 1,
+  },
+  scanFrame: {
+    position: 'absolute',
+    width: 230,
+    height: 150,
+    left: '50%',
+    top: '50%',
+    marginLeft: -115,
+    marginTop: -75,
+  },
+  cornerTopLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 44,
+    height: 44,
+    borderTopWidth: 5,
+    borderLeftWidth: 5,
+    borderColor: '#FBBF24',
+    borderTopLeftRadius: 14,
+  },
+  cornerTopRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 44,
+    height: 44,
+    borderTopWidth: 5,
+    borderRightWidth: 5,
+    borderColor: '#FBBF24',
+    borderTopRightRadius: 14,
+  },
+  cornerBottomLeft: {
+    position: 'absolute',
+    left: 0,
+    bottom: 0,
+    width: 44,
+    height: 44,
+    borderBottomWidth: 5,
+    borderLeftWidth: 5,
+    borderColor: '#FBBF24',
+    borderBottomLeftRadius: 14,
+  },
+  cornerBottomRight: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 44,
+    height: 44,
+    borderBottomWidth: 5,
+    borderRightWidth: 5,
+    borderColor: '#FBBF24',
+    borderBottomRightRadius: 14,
+  },
+  lookupOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 18,
+    backgroundColor: 'rgba(17, 24, 39, 0.82)',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lookupText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  scanHelp: {
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  permissionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+  },
+  permissionTitle: {
+    marginTop: 12,
+    fontSize: 22,
+    fontWeight: '900',
     color: '#111827',
   },
-  scanSubtext: {
+  permissionText: {
     marginTop: 8,
     fontSize: 14,
+    lineHeight: 21,
     color: '#6B7280',
     textAlign: 'center',
   },
-  button: {
+  primaryButton: {
+    marginTop: 18,
     backgroundColor: '#111827',
-    paddingVertical: 15,
+    borderRadius: 18,
+    paddingVertical: 14,
     paddingHorizontal: 18,
-    borderRadius: 16,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  notFoundCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+    marginTop: 4,
+  },
+  notFoundTitle: {
+    marginTop: 10,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  notFoundText: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#6B7280',
+  },
+  secondaryButton: {
+    marginTop: 14,
+    backgroundColor: '#111827',
+    borderRadius: 18,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  buttonText: {
+  secondaryButtonText: {
     color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: '900',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.55)',
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 24,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    gap: 12,
+    backgroundColor: '#FFF7F0',
+    borderTopLeftRadius: 34,
+    borderTopRightRadius: 34,
+    padding: 22,
+    maxHeight: '86%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalEmoji: {
+    fontSize: 42,
+  },
+  modalBrand: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#D97706',
+    textTransform: 'uppercase',
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: '800',
+    marginTop: 4,
+    fontSize: 28,
+    lineHeight: 33,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  modalScoreCard: {
+    marginTop: 14,
+    backgroundColor: '#111827',
+    borderRadius: 24,
+    padding: 18,
+  },
+  modalScore: {
+    color: '#FFFFFF',
+    fontSize: 46,
+    fontWeight: '900',
+  },
+  modalScoreLabel: {
+    color: '#FBBF24',
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  modalSectionTitle: {
+    marginTop: 18,
+    marginBottom: 7,
+    fontSize: 15,
+    fontWeight: '900',
     color: '#111827',
   },
   modalText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
     color: '#4B5563',
   },
-  score: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  sectionTitle: {
-    marginTop: 8,
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  flagRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  flagDot: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-    width: 18,
-  },
-  flagText: {
-    flex: 1,
+  bulletText: {
     fontSize: 14,
-    lineHeight: 20,
-    color: '#374151',
+    lineHeight: 21,
+    color: '#4B5563',
+    marginBottom: 4,
+  },
+  historyButton: {
+    marginTop: 20,
+    backgroundColor: '#D97706',
+    borderRadius: 18,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  historyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });

@@ -1,7 +1,7 @@
 import { View, Text, Image, StyleSheet, Pressable } from "react-native";
 import MatchBadge from "./MatchBadge";
 import { COLORS } from "../constants/colors";
-import type { Product } from "../data/products";
+import type { Product } from "../data/productCatalog";
 
 type Props = {
   product: Product;

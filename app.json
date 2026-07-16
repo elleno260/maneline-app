@@ -27,9 +27,9 @@
     "android": {
       "permissions": [
         "CAMERA",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
         "READ_MEDIA_IMAGES",
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
       ],
       "package": "com.elleno260.manelineapp"
     }

@@ -268,8 +268,26 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.heroEyebrow}>Today’s ManeLine</Text>
               <Text style={styles.heroTitle}>Hey {firstName},</Text>
+              <Text style={styles.heroValueStatement}> Scan products, understand ingredients, and build a routine that matches your hair. </Text>
             </View>
 
+<Pressable
+  style={styles.primaryScanCard}
+  onPress={() => router.push('/(tabs)/scan' as never)}
+>
+  <View style={styles.primaryScanIcon}>
+    <Ionicons name="scan-outline" size={28} color="#111827" />
+  </View>
+
+  <View style={{ flex: 1 }}>
+    <Text style={styles.primaryScanTitle}>Scan a product</Text>
+    <Text style={styles.primaryScanText}>
+      Check ingredients, compatibility, and whether it fits your routine.
+    </Text>
+  </View>
+
+  <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
+</Pressable>
             <View style={styles.dateBadge}>
               <Text style={styles.dateDay}>
                 {today.toLocaleDateString(undefined, { weekday: 'short' })}
@@ -980,4 +998,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     borderColor: '#111827',
   },
+  heroValueStatement: {
+  marginTop: 10,
+  fontSize: 15,
+  lineHeight: 22,
+  color: '#E5E7EB',
+  fontWeight: '700',
+},
+primaryScanCard: {
+  backgroundColor: '#D97706',
+  borderRadius: 30,
+  padding: 18,
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 14,
+  marginBottom: 18,
+},
+primaryScanIcon: {
+  width: 58,
+  height: 58,
+  borderRadius: 29,
+  backgroundColor: '#FFFFFF',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+primaryScanTitle: {
+  fontSize: 20,
+  fontWeight: '900',
+  color: '#FFFFFF',
+},
+primaryScanText: {
+  marginTop: 4,
+  fontSize: 13,
+  lineHeight: 19,
+  color: '#FFF7ED',
+  fontWeight: '700',
+},
 });

@@ -1,6 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import type { ComponentProps } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Linking,
   Modal,
@@ -12,236 +15,185 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import {
-  PAGE_HORIZONTAL_PADDING,
-  PAGE_TOP_PADDING,
-  TAB_BOTTOM_PADDING,
-} from '../../constants/layout';
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+  getUserHairProfile,
+  UserHairProfile,
+} from '../../services/profileFirebaseService';
+import {
+  getProductRecommendations,
+  ProductRecommendation,
+} from '../../services/productRecommendationService';
 
-type Category = {
-  id: string;
-  label: string;
-  icon: IconName;
-};
+type IconName = ComponentProps<typeof Ionicons>['name'];
 
-type Product = {
-  id: string;
-  name: string;
-  brand: string;
-  category: string;
-  price: string;
-  matchScore: number;
-  emoji: string;
-  bestFor: string[];
-  tags: string[];
-  routineMatch: string;
-  summary: string;
-  ingredients: string[];
-  cautions?: string[];
-  buyUrl?: string;
-};
-
-const categories: Category[] = [
-  { id: 'All', label: 'All', icon: 'sparkles-outline' },
-  { id: 'Moisture', label: 'Moisture', icon: 'water-outline' },
-  { id: 'Scalp', label: 'Scalp', icon: 'leaf-outline' },
-  { id: 'Repair', label: 'Repair', icon: 'bandage-outline' },
-  { id: 'Styling', label: 'Styling', icon: 'brush-outline' },
-  { id: 'Growth', label: 'Growth', icon: 'flower-outline' },
-  { id: 'Clean', label: 'Clean', icon: 'shield-checkmark-outline' },
+const categories = [
+  'All',
+  'Shampoo',
+  'Conditioner',
+  'Deep Conditioner',
+  'Leave-In',
+  'Cream',
+  'Gel',
+  'Oil',
+  'Scalp Care',
+  'Treatment',
+  'Styler',
 ];
 
-const products: Product[] = [
-  {
-    id: '1',
-    name: 'Hydra Cloud Leave-In Conditioner',
-    brand: 'ManeLine Picks',
-    category: 'Moisture',
-    price: '$14.99',
-    matchScore: 94,
-    emoji: '💧',
-    bestFor: ['Low porosity', 'Dryness', 'Softness'],
-    tags: ['lightweight', 'hydrating', 'wash day'],
-    routineMatch: 'Best after shampooing and deep conditioning.',
-    summary:
-      'A lightweight leave-in option made for moisture without leaving the hair feeling too coated or heavy.',
-    ingredients: ['Aloe Vera', 'Glycerin', 'Cetyl Alcohol', 'Panthenol'],
-    cautions: ['Use a small amount first if your hair gets buildup easily.'],
-    buyUrl: 'https://www.google.com/search?q=leave+in+conditioner+for+low+porosity+hair',
-  },
-  {
-    id: '2',
-    name: 'Scalp Reset Clarifying Shampoo',
-    brand: 'Root Theory',
-    category: 'Scalp',
-    price: '$18.00',
-    matchScore: 88,
-    emoji: '🌿',
-    bestFor: ['Buildup', 'Itchy scalp', 'Product reset'],
-    tags: ['clarifying', 'scalp care', 'reset'],
-    routineMatch: 'Use once or twice a month before deep conditioning.',
-    summary:
-      'A clarifying shampoo option for users who use gels, oils, creams, or edge control often.',
-    ingredients: ['Tea Tree Water', 'Cocamidopropyl Betaine', 'Aloe Vera'],
-    cautions: ['Do not overuse if your hair is already dry.'],
-    buyUrl: 'https://www.google.com/search?q=clarifying+shampoo+for+natural+hair',
-  },
-  {
-    id: '3',
-    name: 'Bond Bloom Repair Mask',
-    brand: 'Crown Lab',
-    category: 'Repair',
-    price: '$22.50',
-    matchScore: 82,
-    emoji: '🧬',
-    bestFor: ['Breakage', 'Color-treated hair', 'Strength'],
-    tags: ['repair', 'mask', 'bond support'],
-    routineMatch: 'Use when your hair feels weak, limp, or over-manipulated.',
-    summary:
-      'A strengthening treatment designed for hair that needs repair support after heat, color, or protective styling.',
-    ingredients: ['Hydrolyzed Protein', 'Amino Acids', 'Avocado Oil'],
-    cautions: ['May be too protein-heavy for users who are protein sensitive.'],
-    buyUrl: 'https://www.google.com/search?q=hair+repair+mask+bond+treatment',
-  },
-  {
-    id: '4',
-    name: 'Soft Hold Curl Gel',
-    brand: 'Pattern Room',
-    category: 'Styling',
-    price: '$12.99',
-    matchScore: 79,
-    emoji: '🌀',
-    bestFor: ['Definition', 'Twist outs', 'Wash and go'],
-    tags: ['gel', 'definition', 'soft hold'],
-    routineMatch: 'Apply after leave-in conditioner on damp hair.',
-    summary:
-      'A styling gel with flexible hold for definition without an overly crunchy finish.',
-    ingredients: ['Flaxseed Extract', 'Aloe Vera', 'PVP'],
-    cautions: ['Layer carefully with creams to avoid flakes.'],
-    buyUrl: 'https://www.google.com/search?q=soft+hold+curl+gel',
-  },
-  {
-    id: '5',
-    name: 'Clean Cream Daily Moisturizer',
-    brand: 'Every Strand',
-    category: 'Clean',
-    price: '$16.00',
-    matchScore: 91,
-    emoji: '🤍',
-    bestFor: ['Daily moisture', 'Clean beauty', 'Simple routines'],
-    tags: ['clean', 'daily', 'moisturizer'],
-    routineMatch: 'Use between wash days when hair feels dry.',
-    summary:
-      'A simple moisturizer for people who want fewer harsh ingredients and an easier daily routine.',
-    ingredients: ['Water', 'Shea Butter', 'Aloe Vera', 'Jojoba Oil'],
-    cautions: ['May feel heavy for very fine hair if over-applied.'],
-    buyUrl: 'https://www.google.com/search?q=clean+hair+moisturizer',
-  },
-  {
-    id: '6',
-    name: 'Length Care Scalp Oil',
-    brand: 'Root Ritual',
-    category: 'Growth',
-    price: '$13.50',
-    matchScore: 85,
-    emoji: '🌱',
-    bestFor: ['Scalp massage', 'Length retention', 'Protective styles'],
-    tags: ['oil', 'scalp', 'growth routine'],
-    routineMatch: 'Use lightly on scalp 2–3 times per week.',
-    summary:
-      'A scalp oil option that fits into a length-retention routine, especially during protective styles.',
-    ingredients: ['Jojoba Oil', 'Rosemary Oil', 'Peppermint Oil'],
-    cautions: ['Patch test first if your scalp is sensitive.'],
-    buyUrl: 'https://www.google.com/search?q=scalp+oil+for+hair+growth',
-  },
-];
+const fallbackProfile: UserHairProfile = {
+  displayName: 'Ellen',
+  email: 'ellen@example.com',
+  hairType: '4C',
+  porosity: 'Low',
+  density: 'Fine',
+  scalp: 'Dry',
+  goals: ['Moisture', 'Length retention', 'Growth', 'Thickness'],
+  allergies: '',
+  routineFocus:
+    'Moisture-first routine with lightweight products and buildup control.',
+  routineCompatibilityScore: 91,
+  routineSteps: [
+    {
+      id: 'cleanse',
+      title: 'Cleanse',
+      frequency: 'Every 7–10 days',
+      productType: 'Gentle shampoo or clarifying shampoo as needed',
+      note: 'Focus on removing buildup without stripping your hair.',
+    },
+    {
+      id: 'leave-in',
+      title: 'Leave-in',
+      frequency: 'After every wash',
+      productType: 'Lightweight leave-in conditioner',
+      note: 'Apply in sections so the product distributes evenly.',
+    },
+  ],
+};
 
 export default function SearchScreen() {
-  const [query, setQuery] = useState('');
+  const insets = useSafeAreaInsets();
+
+  const [queryText, setQueryText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [savedProducts, setSavedProducts] = useState<Record<string, boolean>>(
-    {}
+  const [recommendations, setRecommendations] = useState<
+    ProductRecommendation[]
+  >([]);
+  const [selectedRecommendation, setSelectedRecommendation] =
+    useState<ProductRecommendation | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadRecommendations = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const profile = await getUserHairProfile(fallbackProfile);
+
+      const rankedProducts = await getProductRecommendations(profile, {
+        category: selectedCategory,
+        query: queryText,
+      });
+
+      setRecommendations(rankedProducts);
+    } catch (error) {
+      console.warn('Could not load product recommendations:', error);
+      setRecommendations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [queryText, selectedCategory]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRecommendations();
+    }, [loadRecommendations])
   );
 
-  const filteredProducts = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return products.filter((product) => {
-      const matchesCategory =
-        selectedCategory === 'All' || product.category === selectedCategory;
-
-      const matchesSearch =
-        normalizedQuery.length === 0 ||
-        product.name.toLowerCase().includes(normalizedQuery) ||
-        product.brand.toLowerCase().includes(normalizedQuery) ||
-        product.category.toLowerCase().includes(normalizedQuery) ||
-        product.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)) ||
-        product.bestFor.some((item) =>
-          item.toLowerCase().includes(normalizedQuery)
-        );
-
-      return matchesCategory && matchesSearch;
-    });
-  }, [query, selectedCategory]);
-
-  function toggleSave(productId: string) {
-    setSavedProducts((current) => ({
-      ...current,
-      [productId]: !current[productId],
-    }));
+  function openProductLink(url?: string) {
+    if (!url) return;
+    Linking.openURL(url);
   }
 
-  async function handleShop(product: Product) {
-    if (!product.buyUrl) return;
+  function renderProductCard({ item }: { item: ProductRecommendation }) {
+    const { product, compatibility } = item;
 
-    const canOpen = await Linking.canOpenURL(product.buyUrl);
+    return (
+      <Pressable
+        style={styles.productCard}
+        onPress={() => setSelectedRecommendation(item)}
+      >
+        <View style={styles.productTopRow}>
+          <View style={styles.productEmoji}>
+            <Text style={styles.productEmojiText}>
+              {product.imageEmoji ?? '🧴'}
+            </Text>
+          </View>
 
-    if (canOpen) {
-      await Linking.openURL(product.buyUrl);
-    }
+          <View style={{ flex: 1 }}>
+            <Text style={styles.brand}>{product.brand}</Text>
+            <Text style={styles.productName}>{product.name}</Text>
+            <Text style={styles.category}>{product.category}</Text>
+          </View>
+
+          <View style={styles.scorePill}>
+            <Text style={styles.scoreText}>{compatibility.score}%</Text>
+          </View>
+        </View>
+
+        <Text style={styles.description}>{product.description}</Text>
+
+        <View style={styles.reasonBox}>
+          <Text style={styles.reasonTitle}>{compatibility.label}</Text>
+          <Text style={styles.reasonText}>
+            {compatibility.reasons[0] ?? compatibility.summary}
+          </Text>
+        </View>
+
+        <View style={styles.tagRow}>
+          {product.tags.slice(0, 3).map((tag) => (
+            <View key={tag} style={styles.tag}>
+              <Text style={styles.tagText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+      </Pressable>
+    );
   }
-const insets = useSafeAreaInsets();
+
   return (
     <View style={styles.screen}>
       <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.id}
+        data={recommendations}
+        keyExtractor={(item) => item.product.id}
+        renderItem={renderProductCard}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-contentContainerStyle={[
-  styles.listContent,
-  {
-    paddingTop: insets.top + PAGE_TOP_PADDING,
-    paddingBottom: TAB_BOTTOM_PADDING,
-  },
-]}        
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: insets.top + 18,
+            paddingBottom: 140,
+          },
+        ]}
         ListHeaderComponent={
-          <View>
-            <View style={styles.header}>
-              <Text style={styles.eyebrow}>ManeLine Marketplace</Text>
-              <Text style={styles.title}>Find products that fit your routine</Text>
+          <>
+            <View style={styles.hero}>
+              <Text style={styles.eyebrow}>Product Library</Text>
+              <Text style={styles.title}>Find products that match you.</Text>
               <Text style={styles.subtitle}>
-                Search by goal, ingredient need, product type, or hair concern.
+                ManeLine ranks products using your hair profile, goals, routine,
+                and ingredient fit.
               </Text>
             </View>
 
-            <View style={styles.searchBar}>
+            <View style={styles.searchBox}>
               <Ionicons name="search-outline" size={20} color="#6B7280" />
               <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search moisture, scalp, gel, repair..."
+                value={queryText}
+                onChangeText={setQueryText}
+                placeholder="Search products, ingredients, or goals"
                 placeholderTextColor="#9CA3AF"
                 style={styles.searchInput}
               />
-
-              {query.length > 0 && (
-                <Pressable onPress={() => setQuery('')}>
-                  <Ionicons name="close-circle" size={20} color="#6B7280" />
-                </Pressable>
-              )}
             </View>
 
             <ScrollView
@@ -250,253 +202,142 @@ contentContainerStyle={[
               contentContainerStyle={styles.categoryRow}
             >
               {categories.map((category) => {
-                const isActive = selectedCategory === category.id;
+                const isSelected = selectedCategory === category;
 
                 return (
                   <Pressable
-                    key={category.id}
-                    onPress={() => setSelectedCategory(category.id)}
+                    key={category}
+                    onPress={() => setSelectedCategory(category)}
                     style={[
-                      styles.categoryPill,
-                      isActive && styles.categoryPillActive,
+                      styles.categoryChip,
+                      isSelected && styles.categoryChipActive,
                     ]}
                   >
-                    <View
-                      style={[
-                        styles.categoryIconWrap,
-                        isActive && styles.categoryIconWrapActive,
-                      ]}
-                    >
-                      <Ionicons
-                        name={category.icon}
-                        size={20}
-                        color={isActive ? '#FFFFFF' : '#111827'}
-                      />
-                    </View>
-
                     <Text
                       style={[
-                        styles.categoryText,
-                        isActive && styles.categoryTextActive,
+                        styles.categoryChipText,
+                        isSelected && styles.categoryChipTextActive,
                       ]}
                     >
-                      {category.label}
+                      {category}
                     </Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
 
-            <View style={styles.featureCard}>
-              <View style={styles.featureIcon}>
-                <Ionicons name="sparkles" size={22} color="#FFFFFF" />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.featureTitle}>Routine-based discovery</Text>
-                <Text style={styles.featureText}>
-                  This will eventually recommend products based on your hair
-                  profile, scan history, and saved routine.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>
-                {selectedCategory === 'All'
-                  ? 'Recommended products'
-                  : `${selectedCategory} products`}
-              </Text>
-
-              <Text style={styles.resultCount}>
-                {filteredProducts.length} found
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recommended for you</Text>
+              <Text style={styles.sectionSubtitle}>
+                Ranked by compatibility score
               </Text>
             </View>
-          </View>
+
+            {loading ? (
+              <View style={styles.loadingCard}>
+                <ActivityIndicator color="#111827" />
+                <Text style={styles.loadingText}>Ranking products...</Text>
+              </View>
+            ) : null}
+          </>
         }
-        renderItem={({ item }) => {
-          const isSaved = !!savedProducts[item.id];
-
-          return (
-            <Pressable
-              style={styles.productCard}
-              onPress={() => setSelectedProduct(item)}
-            >
-              <View style={styles.productTop}>
-                <View style={styles.productImage}>
-                  <Text style={styles.productEmoji}>{item.emoji}</Text>
-                </View>
-
-                <View style={styles.productInfo}>
-                  <Text style={styles.brand}>{item.brand}</Text>
-                  <Text style={styles.productName}>{item.name}</Text>
-
-                  <View style={styles.tagRow}>
-                    {item.bestFor.slice(0, 2).map((tag) => (
-                      <View key={tag} style={styles.tag}>
-                        <Text style={styles.tagText}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-
-                <Pressable
-                  onPress={() => toggleSave(item.id)}
-                  hitSlop={10}
-                  style={styles.iconButton}
-                >
-                  <Ionicons
-                    name={isSaved ? 'heart' : 'heart-outline'}
-                    size={23}
-                    color={isSaved ? '#E11D48' : '#111827'}
-                  />
-                </Pressable>
-              </View>
-
-              <Text style={styles.summary}>{item.summary}</Text>
-
-              <View style={styles.cardBottom}>
-                <View style={styles.matchPill}>
-                  <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                  <Text style={styles.matchText}>{item.matchScore}% match</Text>
-                </View>
-
-                <Text style={styles.price}>{item.price}</Text>
-
-                <Pressable
-                  style={styles.shopButton}
-                  onPress={() => handleShop(item)}
-                >
-                  <Ionicons name="bag-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.shopText}>Shop</Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          );
-        }}
         ListEmptyComponent={
-          <View style={styles.emptyCard}>
-            <Ionicons name="search-outline" size={34} color="#6B7280" />
-            <Text style={styles.emptyTitle}>No products found</Text>
-            <Text style={styles.emptyText}>
-              Try searching for moisture, scalp, repair, gel, clean, or growth.
-            </Text>
-          </View>
+          !loading ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="bag-handle-outline" size={34} color="#111827" />
+              <Text style={styles.emptyTitle}>No products found</Text>
+              <Text style={styles.emptyText}>
+                Try another category or search term. As your product catalog
+                grows, ManeLine will have more matches to compare.
+              </Text>
+            </View>
+          ) : null
         }
       />
 
-      <ProductDetailModal
-        product={selectedProduct}
-        isSaved={selectedProduct ? !!savedProducts[selectedProduct.id] : false}
-        onClose={() => setSelectedProduct(null)}
-        onSave={() => {
-          if (selectedProduct) toggleSave(selectedProduct.id);
-        }}
-        onShop={() => {
-          if (selectedProduct) handleShop(selectedProduct);
-        }}
-      />
-    </View>
-  );
-}
+      <Modal
+        visible={!!selectedRecommendation}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSelectedRecommendation(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {selectedRecommendation ? (
+              <>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalEmoji}>
+                    {selectedRecommendation.product.imageEmoji ?? '🧴'}
+                  </Text>
 
-function ProductDetailModal({
-  product,
-  isSaved,
-  onClose,
-  onSave,
-  onShop,
-}: {
-  product: Product | null;
-  isSaved: boolean;
-  onClose: () => void;
-  onSave: () => void;
-  onShop: () => void;
-}) {
-  if (!product) return null;
-
-  return (
-    <Modal visible={!!product} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHandle} />
-
-          <View style={styles.modalHeader}>
-            <View style={styles.modalImage}>
-              <Text style={styles.modalEmoji}>{product.emoji}</Text>
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalBrand}>{product.brand}</Text>
-              <Text style={styles.modalTitle}>{product.name}</Text>
-              <Text style={styles.modalPrice}>{product.price}</Text>
-            </View>
-
-            <Pressable onPress={onClose} hitSlop={10}>
-              <Ionicons name="close" size={26} color="#111827" />
-            </Pressable>
-          </View>
-
-          <View style={styles.modalScoreRow}>
-            <View style={styles.modalScorePill}>
-              <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-              <Text style={styles.modalScoreText}>
-                {product.matchScore}% routine match
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.modalSectionTitle}>Why it fits</Text>
-          <Text style={styles.modalBody}>{product.summary}</Text>
-
-          <Text style={styles.modalSectionTitle}>Routine match</Text>
-          <Text style={styles.modalBody}>{product.routineMatch}</Text>
-
-          <Text style={styles.modalSectionTitle}>Key ingredients</Text>
-          <View style={styles.ingredientWrap}>
-            {product.ingredients.map((ingredient) => (
-              <View key={ingredient} style={styles.ingredientChip}>
-                <Text style={styles.ingredientText}>{ingredient}</Text>
-              </View>
-            ))}
-          </View>
-
-          {!!product.cautions?.length && (
-            <>
-              <Text style={styles.modalSectionTitle}>Cautions</Text>
-              {product.cautions.map((caution) => (
-                <View key={caution} style={styles.cautionRow}>
-                  <Ionicons
-                    name="alert-circle-outline"
-                    size={18}
-                    color="#92400E"
-                  />
-                  <Text style={styles.cautionText}>{caution}</Text>
+                  <Pressable
+                    onPress={() => setSelectedRecommendation(null)}
+                    hitSlop={10}
+                  >
+                    <Ionicons name="close" size={24} color="#111827" />
+                  </Pressable>
                 </View>
-              ))}
-            </>
-          )}
 
-          <View style={styles.modalActions}>
-            <Pressable style={styles.secondaryButton} onPress={onSave}>
-              <Ionicons
-                name={isSaved ? 'heart' : 'heart-outline'}
-                size={18}
-                color="#111827"
-              />
-              <Text style={styles.secondaryButtonText}>
-                {isSaved ? 'Saved' : 'Save'}
-              </Text>
-            </Pressable>
+                <Text style={styles.modalBrand}>
+                  {selectedRecommendation.product.brand}
+                </Text>
+                <Text style={styles.modalTitle}>
+                  {selectedRecommendation.product.name}
+                </Text>
 
-            <Pressable style={styles.primaryButton} onPress={onShop}>
-              <Ionicons name="bag-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Shop product</Text>
-            </Pressable>
+                <View style={styles.modalScore}>
+                  <Text style={styles.modalScoreText}>
+                    {selectedRecommendation.compatibility.score}% match
+                  </Text>
+                  <Text style={styles.modalScoreLabel}>
+                    {selectedRecommendation.compatibility.label}
+                  </Text>
+                </View>
+
+                <Text style={styles.modalSectionTitle}>Why it matches</Text>
+                {selectedRecommendation.compatibility.reasons.map((reason) => (
+                  <Text key={reason} style={styles.bulletText}>
+                    • {reason}
+                  </Text>
+                ))}
+
+                {selectedRecommendation.compatibility.cautions.length > 0 ? (
+                  <>
+                    <Text style={styles.modalSectionTitle}>Watch out for</Text>
+                    {selectedRecommendation.compatibility.cautions.map(
+                      (caution) => (
+                        <Text key={caution} style={styles.bulletText}>
+                          • {caution}
+                        </Text>
+                      )
+                    )}
+                  </>
+                ) : null}
+
+                <Text style={styles.modalSectionTitle}>Routine fit</Text>
+                <Text style={styles.modalBodyText}>
+                  {selectedRecommendation.compatibility.routineFit}
+                </Text>
+
+                <Pressable
+                  style={styles.buyButton}
+                  onPress={() =>
+                    openProductLink(selectedRecommendation.product.buyUrl)
+                  }
+                >
+                  <Text style={styles.buyButtonText}>View product</Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                </Pressable>
+              </>
+            ) : null}
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+    </View>
   );
 }
 
@@ -506,32 +347,36 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF7F0',
   },
   listContent: {
-      paddingHorizontal: PAGE_HORIZONTAL_PADDING,
+    paddingHorizontal: 20,
   },
-  header: {
-    marginBottom: 18,
+  hero: {
+    backgroundColor: '#111827',
+    borderRadius: 32,
+    padding: 22,
+    marginBottom: 16,
   },
   eyebrow: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#D97706',
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FBBF24',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 6,
   },
   title: {
-    fontSize: 31,
-    lineHeight: 36,
+    marginTop: 8,
+    fontSize: 34,
+    lineHeight: 39,
     fontWeight: '900',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   subtitle: {
-    marginTop: 8,
+    marginTop: 10,
     fontSize: 15,
     lineHeight: 22,
-    color: '#6B7280',
+    color: '#E5E7EB',
+    fontWeight: '700',
   },
-  searchBar: {
+  searchBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     paddingHorizontal: 14,
@@ -541,7 +386,6 @@ const styles = StyleSheet.create({
     gap: 10,
     borderWidth: 1,
     borderColor: '#F3D5C0',
-    marginBottom: 16,
   },
   searchInput: {
     flex: 1,
@@ -549,289 +393,218 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   categoryRow: {
-    gap: 12,
-    paddingBottom: 18,
+    paddingVertical: 16,
+    gap: 10,
   },
-  categoryPill: {
-    width: 92,
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F3D5C0',
+  },
+  categoryChipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  categoryChipText: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  categoryChipTextActive: {
+    color: '#FFFFFF',
+  },
+  sectionHeader: {
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  sectionSubtitle: {
+    marginTop: 3,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  loadingCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
-    padding: 12,
+    padding: 18,
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
     borderColor: '#F3D5C0',
+    marginBottom: 14,
   },
-  categoryPillActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  categoryIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF7F0',
-  },
-  categoryIconWrapActive: {
-    backgroundColor: '#D97706',
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  categoryTextActive: {
-    color: '#FFFFFF',
-  },
-  featureCard: {
-    backgroundColor: '#111827',
-    borderRadius: 24,
-    padding: 18,
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#D97706',
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  featureText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#E5E7EB',
-  },
-  sectionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  resultCount: {
-    fontSize: 13,
-    fontWeight: '700',
+  loadingText: {
     color: '#6B7280',
+    fontWeight: '700',
   },
   productCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 16,
+    borderRadius: 28,
+    padding: 17,
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#F3D5C0',
   },
-  productTop: {
+  productTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 12,
   },
-  productImage: {
-    width: 68,
-    height: 68,
-    borderRadius: 22,
-    backgroundColor: '#FFF1E6',
+  productEmoji: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFF7F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  productEmoji: {
-    fontSize: 32,
-  },
-  productInfo: {
-    flex: 1,
+  productEmojiText: {
+    fontSize: 28,
   },
   brand: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#D97706',
-    marginBottom: 3,
+    textTransform: 'uppercase',
   },
   productName: {
-    fontSize: 17,
+    marginTop: 3,
+    fontSize: 18,
+    lineHeight: 22,
     fontWeight: '900',
     color: '#111827',
-    lineHeight: 22,
   },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
+  category: {
+    marginTop: 3,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  scorePill: {
+    backgroundColor: '#111827',
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  scoreText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
+  },
+  description: {
+    marginTop: 13,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#4B5563',
+  },
+  reasonBox: {
+    marginTop: 13,
     backgroundColor: '#FFF7F0',
+    borderRadius: 18,
+    padding: 13,
+  },
+  reasonTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  reasonText: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#6B7280',
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 13,
   },
   tag: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    backgroundColor: '#F3D5C0',
     borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   tagText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  summary: {
-    marginTop: 12,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#4B5563',
-  },
-  cardBottom: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  matchPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#111827',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-  matchText: {
-    color: '#FFFFFF',
     fontSize: 12,
+    color: '#111827',
     fontWeight: '800',
   },
-  price: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#111827',
-    marginLeft: 'auto',
-  },
-  shopButton: {
-    backgroundColor: '#D97706',
-    paddingVertical: 8,
-    paddingHorizontal: 11,
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  shopText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '900',
-  },
   emptyCard: {
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 28,
+    padding: 22,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F3D5C0',
-    marginTop: 20,
   },
   emptyTitle: {
     marginTop: 10,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     color: '#111827',
   },
   emptyText: {
-    marginTop: 6,
+    marginTop: 7,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     color: '#6B7280',
     textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.55)',
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    backgroundColor: '#FFF7F0',
+    borderTopLeftRadius: 34,
+    borderTopRightRadius: 34,
     padding: 22,
-    paddingBottom: 34,
-    maxHeight: '88%',
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: '#D1D5DB',
-    marginBottom: 18,
+    maxHeight: '86%',
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-  },
-  modalImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: '#FFF1E6',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
   },
   modalEmoji: {
-    fontSize: 36,
+    fontSize: 42,
   },
   modalBrand: {
+    marginTop: 12,
     fontSize: 12,
     fontWeight: '900',
     color: '#D97706',
-    marginBottom: 3,
+    textTransform: 'uppercase',
   },
   modalTitle: {
-    fontSize: 21,
-    lineHeight: 26,
+    marginTop: 4,
+    fontSize: 28,
+    lineHeight: 33,
     fontWeight: '900',
     color: '#111827',
   },
-  modalPrice: {
-    marginTop: 5,
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  modalScoreRow: {
-    flexDirection: 'row',
-    marginTop: 18,
-  },
-  modalScorePill: {
+  modalScore: {
+    marginTop: 14,
     backgroundColor: '#111827',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    borderRadius: 22,
+    padding: 16,
   },
   modalScoreText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  modalScoreLabel: {
+    marginTop: 3,
+    color: '#FBBF24',
     fontWeight: '900',
   },
   modalSectionTitle: {
@@ -841,75 +614,30 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#111827',
   },
-  modalBody: {
+  bulletText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#4B5563',
+    marginBottom: 4,
+  },
+  modalBodyText: {
     fontSize: 14,
     lineHeight: 21,
     color: '#4B5563',
   },
-  ingredientWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  ingredientChip: {
-    backgroundColor: '#FFF7F0',
-    borderRadius: 999,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-  },
-  ingredientText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#374151',
-  },
-  cautionRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  cautionText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#92400E',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 22,
-  },
-  secondaryButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#111827',
-    borderRadius: 16,
-    paddingVertical: 13,
+  buyButton: {
+    marginTop: 20,
+    backgroundColor: '#D97706',
+    borderRadius: 18,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 7,
+    gap: 8,
   },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  primaryButton: {
-    flex: 1.4,
-    backgroundColor: '#111827',
-    borderRadius: 16,
-    paddingVertical: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 7,
-  },
-  primaryButtonText: {
-    fontSize: 14,
-    fontWeight: '900',
+  buyButtonText: {
     color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });
