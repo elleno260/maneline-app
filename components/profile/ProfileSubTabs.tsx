@@ -1,6 +1,12 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import type { ProfileTab } from "../../app/(tabs)/profile";
+//import type { ProfileTab } from "../../app/(tabs)/profile";
 
+export type ProfileTab =
+  | 'profile'
+  | 'routine'
+  | 'settings';
+
+  
 type Props = {
   activeTab: ProfileTab;
   setActiveTab: (tab: ProfileTab) => void;

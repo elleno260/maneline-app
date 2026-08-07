@@ -15,7 +15,8 @@
             "deploymentTarget": "16.0"
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "ios": {
       "infoPlist": {
@@ -29,7 +30,7 @@
         "CAMERA",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
-        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_IMAGES"
       ],
       "package": "com.elleno260.manelineapp"
     }

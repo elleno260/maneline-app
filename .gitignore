@@ -51,3 +51,6 @@ serviceAccountKey.json
 *.keystore
 *.jks
 credentials.json
+.expo/
+android/
+ios/

@@ -9,10 +9,16 @@
     "rootDir": "src",
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    "noEmit": false
   },
   "compileOnSave": true,
   "include": [
     "src"
+  ],
+  "extends": "expo/tsconfig.base",
+  "exclude": [
+    "node_modules",
+    "archive"
   ]
 }

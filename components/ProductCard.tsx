@@ -1,8 +1,9 @@
 import { View, Text, Image, StyleSheet, Pressable } from "react-native";
 import MatchBadge from "./MatchBadge";
 import { COLORS } from "../constants/colors";
-import type { Product } from "../data/productCatalog";
-
+import type {
+  HairProduct as Product,
+} from '../types/product.types';
 type Props = {
   product: Product;
   variant?: "light" | "dark";
@@ -22,15 +23,11 @@ export default function ProductCard({
       onPress={onPress}
     >
       <View style={styles.imageWrapper}>
-        {product.image ? (
-          <Image
-            source={{ uri: product.image }}
-            style={styles.image}
-            resizeMode="contain"
-          />
-        ) : (
-          <View style={styles.placeholderImage} />
-        )}
+      <View style={styles.productImage}>
+  <Text style={styles.productEmoji}>
+    {product.imageEmoji ?? '🧴'}
+  </Text>
+</View>
       </View>
 
       <View style={styles.info}>
@@ -45,7 +42,7 @@ export default function ProductCard({
           {product.brand}
         </Text>
 
-        <MatchBadge label={product.match} />
+        {/* <MatchBadge label={compatibility.label} /> */}
       </View>
     </Pressable>
   );
@@ -106,4 +103,14 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
   },
+  productEmoji: {
+  fontSize: 32,
+},
+productImage: {
+  width: '100%',
+  height: 150,
+  backgroundColor: '#FFF7F0',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
 });

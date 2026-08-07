@@ -2,29 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Linking,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import {ActivityIndicator,FlatList,Linking,Modal,Pressable,ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import {
-  getUserHairProfile,
-  UserHairProfile,
-} from '../../services/profileFirebaseService';
-import {
-  getProductRecommendations,
-  ProductRecommendation,
-} from '../../services/productRecommendationService';
-
+import {getUserHairProfileOrNull,  UserHairProfile,} from '../../services/profileFirebaseService';
+import { getProductRecommendations,  ProductRecommendation,} from '../../services/productRecommendationService';
+import type { HairProfileForMatching,} from '../../types/product.types';
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
 const categories = [
@@ -83,25 +65,34 @@ export default function SearchScreen() {
     useState<ProductRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadRecommendations = useCallback(async () => {
-    setLoading(true);
+const loadRecommendations = useCallback(async () => {
+  setLoading(true);
 
-    try {
-      const profile = await getUserHairProfile(fallbackProfile);
+  try {
+    const savedProfile =
+      await getUserHairProfileOrNull();
 
-      const rankedProducts = await getProductRecommendations(profile, {
+    const profile: HairProfileForMatching =
+      savedProfile ?? fallbackProfile;
+
+    const rankedProducts =
+      await getProductRecommendations(profile, {
         category: selectedCategory,
         query: queryText,
       });
 
-      setRecommendations(rankedProducts);
-    } catch (error) {
-      console.warn('Could not load product recommendations:', error);
-      setRecommendations([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [queryText, selectedCategory]);
+    setRecommendations(rankedProducts);
+  } catch (error) {
+    console.warn(
+      'Could not load product recommendations:',
+      error
+    );
+
+    setRecommendations([]);
+  } finally {
+    setLoading(false);
+  }
+}, [queryText, selectedCategory]);
 
   useFocusEffect(
     useCallback(() => {

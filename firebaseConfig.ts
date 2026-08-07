@@ -50,3 +50,4 @@ export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app, 'us-central1');
+export const firebaseApp = initializeApp(firebaseConfig);

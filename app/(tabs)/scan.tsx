@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
-  BarcodeScanningResult,
   CameraView,
   useCameraPermissions,
 } from 'expo-camera';
+import type { BarcodeScanningResult } from 'expo-camera';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -17,7 +17,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { generateProductExplanation } from '../../services/aiExplanationService';
 import { getOrCreateGuestUser } from '../../services/authService';
 import { calculateCompatibility } from '../../services/compatibilityService';
@@ -26,14 +25,13 @@ import { getUserHairProfileOrNull } from '../../services/profileFirebaseService'
 import {
   buildScanHistoryItem,
   saveScanToFirebaseHistory,
-  ScanHistoryItem,
 } from '../../services/scanHistoryFirebaseService';
-import { HairProduct } from '../../types/product.types';
+import type { ScanHistoryItem } from '../../services/scanHistoryFirebaseService';
+import type { HairProduct } from '../../types/product.types';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
-
   const [scanned, setScanned] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
   const [notFoundBarcode, setNotFoundBarcode] = useState<string | null>(null);
@@ -45,40 +43,80 @@ export default function ScanScreen() {
   async function handleBarcodeScanned(result: BarcodeScanningResult) {
     if (scanned || lookingUp) return;
 
-    setScanned(true);
-    setLookingUp(true);
-    setNotFoundBarcode(null);
-
     const barcode = result.data?.trim();
 
     if (!barcode) {
-      setLookingUp(false);
-      setScanned(false);
+      Alert.alert(
+        'Barcode not read',
+        'ManeLine could not read that barcode. Please try again.'
+      );
       return;
     }
 
+    setScanned(true);
+    setLookingUp(true);
+    setNotFoundBarcode(null);
+    setLatestScan(null);
+
     try {
-      /**
-       * This silently creates a Firebase anonymous user.
-       * No login screen. No email/password. No demo-user.
-       */
       await getOrCreateGuestUser();
 
       const profile = await getUserHairProfileOrNull();
 
       if (!profile) {
-        setLookingUp(false);
+        setScanned(false);
         router.push('/hairProfileSetup' as never);
         return;
       }
 
+      /*
+       * This single service now handles the complete lookup order:
+       * Firestore -> INCI (when enabled) -> Open Beauty Facts
+       * -> UPCitemdb -> Gemini ingredient search.
+       */
       const product = await getOrImportProductByBarcode(barcode);
 
       if (!product) {
         setNotFoundBarcode(barcode);
-        setLookingUp(false);
         return;
       }
+
+      if (!product.ingredients?.length) {
+        Alert.alert(
+          'Ingredients needed',
+          `${product.name} was identified, but ManeLine could not verify its ingredient list online. Please scan the ingredient label to continue.`
+        );
+
+        setScanned(false);
+        return;
+      }
+
+      if (!product) {
+  Alert.alert(
+    'Product not identified',
+    'We could not find this barcode. Scan the ingredient label to continue.',
+    [  
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Scan label',
+        onPress: () => {
+          router.push({
+            pathname: '/review-scan',
+            params: {
+              barcode,
+              scanMode: 'ingredients',
+            },
+          });
+        },
+      },
+    ]
+  );
+
+  return;
+}
 
       const compatibility = calculateCompatibility(product, profile);
 
@@ -105,7 +143,7 @@ export default function ScanScreen() {
         product,
       });
     } catch (error) {
-      console.warn('Scan failed:', error);
+      console.warn('[ManeLine scan] Scan failed:', error);
 
       Alert.alert(
         'Scan failed',
@@ -205,8 +243,8 @@ export default function ScanScreen() {
         </View>
 
         <Text style={styles.scanHelp}>
-          Hold the barcode inside the frame. If ManeLine finds the product
-          through Firebase or INCI API, it will analyze it automatically.
+          Hold the barcode inside the frame. ManeLine will check saved products,
+          Open Beauty Facts, UPCitemdb, and verified ingredient sources.
         </Text>
 
         {notFoundBarcode ? (
@@ -214,8 +252,8 @@ export default function ScanScreen() {
             <Ionicons name="alert-circle-outline" size={30} color="#B45309" />
             <Text style={styles.notFoundTitle}>Product not found</Text>
             <Text style={styles.notFoundText}>
-              Barcode {notFoundBarcode} was not found yet. Later, this screen
-              can let users submit the product name and ingredient label.
+              Barcode {notFoundBarcode} could not be identified. Try scanning it
+              again or scan the ingredient label instead.
             </Text>
 
             <Pressable style={styles.secondaryButton} onPress={resetScanner}>
