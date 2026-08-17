@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import {
   PAGE_HORIZONTAL_PADDING,
   PAGE_TOP_PADDING,
@@ -47,6 +48,39 @@ type RoutineTask = {
   title: string;
   description: string;
   icon: IconName;
+};
+
+type DiscoverProduct = {
+  id: string;
+  brand: string;
+  name: string;
+  category: string;
+  match: number;
+  icon: IconName;
+  backgroundColor: string;
+};
+
+/**
+ * ManeLine Brand Palette
+ *
+ * PRD:
+ * Lemon Cream  #FFF9C7
+ * Brown        #3D2920
+ * Light Blue   #95BFFF
+ * Oxford Blue  #20314B
+ * Green        #667D41
+ */
+const COLORS = {
+  lemonCream: '#FFF9C7',
+  brown: '#3D2920',
+  lightBlue: '#95BFFF',
+  oxfordBlue: '#20314B',
+  green: '#667D41',
+
+  white: '#FFFFFF',
+  background: '#FFFDF2',
+  mutedText: '#6B7280',
+  lightBorder: '#E9E3C8',
 };
 
 const PROFILE_STORAGE_KEY = 'MANELINE_PROFILE_V1';
@@ -98,20 +132,10 @@ const fallbackProfile: HairProfile = {
       title: 'Refresh',
       frequency: 'Midweek',
       productType: 'Water-based mist or light moisturizer',
-      note: 'Only refresh if your hair feels dry. Do not add product just to add product.',
+      note: 'Only refresh if your hair feels dry.',
     },
   ],
 };
-
-const dailyTips = [
-  'Low porosity hair usually does better when moisture is layered lightly instead of packed on heavily.',
-  'Your scalp is part of your routine too. A quick scalp check can tell you if your products are building up.',
-  'If your hair feels dry right after moisturizing, you may need water-based hydration before creams or oils.',
-  'Trim checks help you catch thinning ends before breakage spreads.',
-  'A product that works for someone else can still be wrong for your routine.',
-  'Deep conditioning works better when your hair is fully saturated and given enough time to absorb moisture.',
-  'If your style flakes, it may be product layering — not necessarily the product itself.',
-];
 
 const weeklyTasks: RoutineTask[] = [
   {
@@ -158,9 +182,59 @@ const weeklyTasks: RoutineTask[] = [
   },
 ];
 
+/**
+ * Temporary discovery data for the homepage preview.
+ *
+ * Later, this should come from the same personalized recommendation
+ * source used by the Search / Discover screen.
+ */
+const discoverProducts: DiscoverProduct[] = [
+  {
+    id: '1',
+    brand: 'ManeLine Pick',
+    name: 'Hydrating Leave-In',
+    category: 'Leave-In',
+    match: 94,
+    icon: 'water-outline',
+    backgroundColor: COLORS.lightBlue,
+  },
+  {
+    id: '2',
+    brand: 'ManeLine Pick',
+    name: 'Gentle Cleanser',
+    category: 'Shampoo',
+    match: 91,
+    icon: 'sparkles-outline',
+    backgroundColor: COLORS.lemonCream,
+  },
+  {
+    id: '3',
+    brand: 'ManeLine Pick',
+    name: 'Scalp Serum',
+    category: 'Scalp Care',
+    match: 88,
+    icon: 'leaf-outline',
+    backgroundColor: '#E5EBD8',
+  },
+  {
+    id: '4',
+    brand: 'ManeLine Pick',
+    name: 'Moisture Mask',
+    category: 'Deep Conditioner',
+    match: 86,
+    icon: 'flower-outline',
+    backgroundColor: '#E8F0FF',
+  },
+];
+
 export default function HomeScreen() {
   const [profile, setProfile] = useState<HairProfile>(fallbackProfile);
-  const [checkedTasks, setCheckedTasks] = useState<Record<string, boolean>>({});
+
+  const [checkedTasks, setCheckedTasks] = useState<
+    Record<string, boolean>
+  >({});
+
+  const insets = useSafeAreaInsets();
 
   useFocusEffect(
     useCallback(() => {
@@ -178,7 +252,8 @@ export default function HomeScreen() {
         setProfile({
           ...fallbackProfile,
           ...parsed,
-          routineSteps: parsed.routineSteps ?? fallbackProfile.routineSteps,
+          routineSteps:
+            parsed.routineSteps ?? fallbackProfile.routineSteps,
           routineCompatibilityScore:
             parsed.routineCompatibilityScore ??
             fallbackProfile.routineCompatibilityScore,
@@ -206,7 +281,11 @@ export default function HomeScreen() {
     };
 
     setCheckedTasks(next);
-    await AsyncStorage.setItem(CHECK_STORAGE_KEY, JSON.stringify(next));
+
+    await AsyncStorage.setItem(
+      CHECK_STORAGE_KEY,
+      JSON.stringify(next)
+    );
   }
 
   const today = useMemo(() => new Date(), []);
@@ -215,21 +294,16 @@ export default function HomeScreen() {
     return profile.displayName?.split(' ')[0] || 'there';
   }, [profile.displayName]);
 
-  const dailyTip = useMemo(() => {
-    const startOfYear = new Date(today.getFullYear(), 0, 0);
-    const diff = today.getTime() - startOfYear.getTime();
-    const dayOfYear = Math.floor(diff / 86400000);
-
-    return dailyTips[dayOfYear % dailyTips.length];
-  }, [today]);
-
   const weekDates = useMemo(() => {
     const start = new Date(today);
+
     start.setDate(today.getDate() - today.getDay());
 
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(start);
+
       date.setDate(start.getDate() + index);
+
       return date;
     });
   }, [today]);
@@ -239,277 +313,494 @@ export default function HomeScreen() {
   }, [weekDates]);
 
   const completedCount = useMemo(() => {
-    return weeklyTasks.filter((task) => checkedTasks[`${weekKey}-${task.id}`])
-      .length;
+    return weeklyTasks.filter(
+      (task) => checkedTasks[`${weekKey}-${task.id}`]
+    ).length;
   }, [checkedTasks, weekKey]);
 
-  const progressPercent = Math.round((completedCount / weeklyTasks.length) * 100);
+  const progressPercent = Math.round(
+    (completedCount / weeklyTasks.length) * 100
+  );
 
-  const todayTasks = weeklyTasks.filter((task) => task.dayIndex === today.getDay());
-  const insets = useSafeAreaInsets();
+  const todayTasks = weeklyTasks.filter(
+    (task) => task.dayIndex === today.getDay()
+  );
+
   return (
     <View style={styles.screen}>
       <ScrollView
-  showsVerticalScrollIndicator={false}
-  contentContainerStyle={[
-    styles.content,
-    {
-      paddingTop: insets.top + PAGE_TOP_PADDING,
-      paddingBottom: TAB_BOTTOM_PADDING,
-    },
-  ]}
->
-        <View style={styles.hero}>
-          <View style={styles.heroCircleOne} />
-          <View style={styles.heroCircleTwo} />
-          <View style={styles.heroCircleThree} />
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + PAGE_TOP_PADDING,
+            paddingBottom: TAB_BOTTOM_PADDING,
+          },
+        ]}
+      >
+        {/* HEADER */}
 
-          <View style={styles.heroTop}>
-            <View>
-              <Text style={styles.heroEyebrow}>Today’s ManeLine</Text>
-              <Text style={styles.heroTitle}>Hey {firstName},</Text>
-              <Text style={styles.heroValueStatement}> Scan products, understand ingredients, and build a routine that matches your hair. </Text>
-            </View>
-
-<Pressable
-  style={styles.primaryScanCard}
-  onPress={() => router.push('/(tabs)/scan' as never)}
->
-  <View style={styles.primaryScanIcon}>
-    <Ionicons name="scan-outline" size={28} color="#111827" />
-  </View>
-
-  <View style={{ flex: 1 }}>
-    <Text style={styles.primaryScanTitle}>Scan a product</Text>
-    <Text style={styles.primaryScanText}>
-      Check ingredients, compatibility, and whether it fits your routine.
-    </Text>
-  </View>
-
-  <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
-</Pressable>
-            <View style={styles.dateBadge}>
-              <Text style={styles.dateDay}>
-                {today.toLocaleDateString(undefined, { weekday: 'short' })}
-              </Text>
-              <Text style={styles.dateNumber}>{today.getDate()}</Text>
-            </View>
-          </View>
-
-          <View style={styles.tipWrap}>
-            <Text style={styles.tipLabel}>Daily hair tip</Text>
-            <Text style={styles.tipText}>{dailyTip}</Text>
-          </View>
-
-          <View style={styles.heroBottomRow}>
-            <View style={styles.heroMiniStat}>
-              <Text style={styles.heroMiniValue}>{profile.hairType}</Text>
-              <Text style={styles.heroMiniLabel}>Hair type</Text>
-            </View>
-
-            <View style={styles.heroMiniStat}>
-              <Text style={styles.heroMiniValue}>{profile.porosity}</Text>
-              <Text style={styles.heroMiniLabel}>Porosity</Text>
-            </View>
-
-            <View style={styles.heroMiniStat}>
-              <Text style={styles.heroMiniValue}>
-                {profile.routineCompatibilityScore}%
-              </Text>
-              <Text style={styles.heroMiniLabel}>Routine match</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.forecastCard}>
-          <View style={styles.forecastIcon}>
-            <Ionicons name="partly-sunny-outline" size={27} color="#111827" />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.forecastLabel}>Hair forecast</Text>
-            <Text style={styles.forecastTitle}>Moisture risk: medium-high</Text>
-            <Text style={styles.forecastText}>
-              Because your profile is {profile.porosity.toLowerCase()} porosity
-              with a {profile.scalp.toLowerCase()} scalp, prioritize lightweight
-              hydration and avoid over-layering heavy products.
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.compatibilityCard}>
+        <View style={styles.topHeader}>
           <View>
-            <Text style={styles.compatibilityLabel}>Routine compatibility</Text>
-            <Text style={styles.compatibilityScore}>
-              {profile.routineCompatibilityScore}%
+            <Text style={styles.brandName}>ManeLine</Text>
+
+            <Text style={styles.greeting}>
+              Hi {firstName}
             </Text>
           </View>
 
-          <View style={styles.compatibilityRight}>
-            <Text style={styles.compatibilityText}>
-              Your current routine is strongly aligned with your goals:
-              {` ${profile.goals.slice(0, 2).join(' + ')}`}.
-            </Text>
-
-            <Pressable onPress={() => router.push('/(tabs)/profile' as never)}>
-              <Text style={styles.editRoutineLink}>Edit routine</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionKicker}>Your routine</Text>
-          <Text style={styles.sectionTitle}>Full routine</Text>
-          <Text style={styles.sectionSubtitle}>
-            This is the routine saved from your profile. Product matches should
-            be based on this, not random recommendations.
-          </Text>
-        </View>
-
-        <View style={styles.routineList}>
-          {profile.routineSteps.map((step, index) => (
-            <View key={step.id} style={styles.routineStepCard}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>{index + 1}</Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.stepTitle}>{step.title}</Text>
-                <Text style={styles.stepFrequency}>{step.frequency}</Text>
-                <Text style={styles.stepProduct}>{step.productType}</Text>
-                <Text style={styles.stepNote}>{step.note}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionKicker}>This week</Text>
-          <Text style={styles.sectionTitle}>Routine calendar</Text>
-          <Text style={styles.sectionSubtitle}>
-            Tap each task when complete to track your weekly consistency.
-          </Text>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.weekRow}
-        >
-          {weekDates.map((date) => {
-            const dayIndex = date.getDay();
-            const tasksForDay = weeklyTasks.filter(
-              (task) => task.dayIndex === dayIndex
-            );
-            const isToday = toDateKey(date) === toDateKey(today);
-
-            return (
-              <View
-                key={toDateKey(date)}
-                style={[styles.dayCard, isToday && styles.dayCardToday]}
-              >
-                <Text style={[styles.dayName, isToday && styles.dayNameToday]}>
-                  {date.toLocaleDateString(undefined, { weekday: 'short' })}
-                </Text>
-
-                <Text
-                  style={[styles.dayNumber, isToday && styles.dayNumberToday]}
-                >
-                  {date.getDate()}
-                </Text>
-
-                <View style={styles.dayTaskWrap}>
-                  {tasksForDay.length === 0 ? (
-                    <Text
-                      style={[
-                        styles.noTaskText,
-                        isToday && styles.noTaskTextToday,
-                      ]}
-                    >
-                      Rest
-                    </Text>
-                  ) : (
-                    tasksForDay.map((task) => {
-                      const taskKey = `${weekKey}-${task.id}`;
-                      const isChecked = !!checkedTasks[taskKey];
-
-                      return (
-                        <Pressable
-                          key={task.id}
-                          onPress={() => toggleTask(taskKey)}
-                          style={[
-                            styles.dayTaskDot,
-                            isChecked && styles.dayTaskDotDone,
-                          ]}
-                        >
-                          <Ionicons
-                            name={isChecked ? 'checkmark' : task.icon}
-                            size={14}
-                            color={isChecked ? '#FFFFFF' : '#111827'}
-                          />
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-
-        <View style={styles.progressCard}>
-          <View style={styles.progressTop}>
-            <View>
-              <Text style={styles.progressTitle}>Weekly consistency</Text>
-              <Text style={styles.progressSubtitle}>
-                {completedCount} of {weeklyTasks.length} routine moments done
-              </Text>
-            </View>
-
-            <Text style={styles.progressPercent}>{progressPercent}%</Text>
-          </View>
-
-          <View style={styles.progressTrack}>
-            <View
-              style={[styles.progressFill, { width: `${progressPercent}%` }]}
+          <View style={styles.profileBubble}>
+            <Ionicons
+              name="person-outline"
+              size={20}
+              color={COLORS.oxfordBlue}
             />
           </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionKicker}>Today</Text>
-          <Text style={styles.sectionTitle}>What needs attention?</Text>
+        {/* SMALLER LANDING / VALUE PROP */}
+
+        <View style={styles.hero}>
+          <View style={styles.heroAccentCircle} />
+
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>
+              Know what works for your hair.
+            </Text>
+
+            <Text style={styles.heroText}>
+              Understand ingredients and discover products
+              matched to your unique hair profile.
+            </Text>
+
+            <View style={styles.profileChips}>
+              <View style={styles.profileChip}>
+                <Text style={styles.profileChipText}>
+                  {profile.hairType}
+                </Text>
+              </View>
+
+              <View style={styles.profileChip}>
+                <Text style={styles.profileChipText}>
+                  {profile.porosity} porosity
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
 
-        {todayTasks.length === 0 ? (
-          <View style={styles.noTodayTaskCard}>
-            <Ionicons name="moon-outline" size={24} color="#111827" />
+        {/* PRIMARY SCAN CTA */}
 
-            <View style={{ flex: 1 }}>
-              <Text style={styles.noTodayTitle}>No major routine task today</Text>
-              <Text style={styles.noTodayText}>
-                Keep your hair protected, avoid over-touching, and check how your
-                products are wearing.
+        <Pressable
+          style={({ pressed }) => [
+            styles.scanButton,
+            pressed && styles.buttonPressed,
+          ]}
+          onPress={() =>
+            router.push('/(tabs)/scan' as never)
+          }
+        >
+          <View style={styles.scanIcon}>
+            <Ionicons
+              name="scan-outline"
+              size={26}
+              color={COLORS.oxfordBlue}
+            />
+          </View>
+
+          <View style={styles.scanTextWrap}>
+            <Text style={styles.scanTitle}>
+              Scan a product
+            </Text>
+
+            <Text style={styles.scanSubtitle}>
+              See ingredients, compatibility, and your match.
+            </Text>
+          </View>
+
+          <Ionicons
+            name="arrow-forward"
+            size={22}
+            color={COLORS.white}
+          />
+        </Pressable>
+
+        {/* ROUTINE COMPATIBILITY */}
+
+        <View style={styles.sectionSpacing}>
+          <View style={styles.sectionHeadingRow}>
+            <View>
+              <Text style={styles.sectionKicker}>
+                YOUR ROUTINE
+              </Text>
+
+              <Text style={styles.sectionTitle}>
+                Routine compatibility
               </Text>
             </View>
           </View>
-        ) : (
-          <View style={styles.taskList}>
-            {todayTasks.map((task) => {
-              const taskKey = `${weekKey}-${task.id}`;
-              const isChecked = !!checkedTasks[taskKey];
+
+          <View style={styles.compatibilityCard}>
+            <View style={styles.compatibilityTop}>
+              <View>
+                <Text style={styles.compatibilityStatus}>
+                  Strong match
+                </Text>
+
+                <Text style={styles.compatibilityDescription}>
+                  Your current routine aligns well with your
+                  hair profile and goals.
+                </Text>
+              </View>
+
+              <View style={styles.scoreCircle}>
+                <Text style={styles.scoreText}>
+                  {profile.routineCompatibilityScore}%
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.compatibilityTrack}>
+              <View
+                style={[
+                  styles.compatibilityFill,
+                  {
+                    width: `${Math.min(
+                      profile.routineCompatibilityScore,
+                      100
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            <View style={styles.goalRow}>
+              {profile.goals.slice(0, 3).map((goal) => (
+                <View
+                  key={goal}
+                  style={styles.goalChip}
+                >
+                  <Text style={styles.goalChipText}>
+                    {goal}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            <Pressable
+              style={styles.compatibilityLink}
+              onPress={() =>
+                router.push('/(tabs)/routine' as never)
+              }
+            >
+              <Text style={styles.compatibilityLinkText}>
+                View routine details
+              </Text>
+
+              <Ionicons
+                name="chevron-forward"
+                size={17}
+                color={COLORS.oxfordBlue}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* DISCOVER PRODUCTS */}
+
+        <View style={styles.sectionSpacing}>
+          <View style={styles.sectionHeadingRow}>
+            <View>
+              <Text style={styles.sectionKicker}>
+                FOR YOU
+              </Text>
+
+              <Text style={styles.sectionTitle}>
+                Discover new products
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() =>
+                router.push('/(tabs)/search' as never)
+              }
+            >
+              <Text style={styles.seeAllText}>
+                See all
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.sectionSubtitle}>
+            A preview of products selected for your hair profile.
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.productRow}
+          >
+            {discoverProducts.map((product) => (
+              <Pressable
+                key={product.id}
+                style={({ pressed }) => [
+                  styles.productCard,
+                  pressed && styles.productPressed,
+                ]}
+                onPress={() =>
+                  router.push('/(tabs)/search' as never)
+                }
+              >
+                <View
+                  style={[
+                    styles.productVisual,
+                    {
+                      backgroundColor:
+                        product.backgroundColor,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={product.icon}
+                    size={36}
+                    color={COLORS.oxfordBlue}
+                  />
+
+                  <View style={styles.matchBadge}>
+                    <Text style={styles.matchBadgeText}>
+                      {product.match}% match
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.productInfo}>
+                  <Text style={styles.productBrand}>
+                    {product.brand}
+                  </Text>
+
+                  <Text
+                    style={styles.productName}
+                    numberOfLines={2}
+                  >
+                    {product.name}
+                  </Text>
+
+                  <Text style={styles.productCategory}>
+                    {product.category}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ROUTINE CALENDAR */}
+
+        <View style={styles.sectionSpacing}>
+          <View style={styles.sectionHeadingRow}>
+            <View>
+              <Text style={styles.sectionKicker}>
+                THIS WEEK
+              </Text>
+
+              <Text style={styles.sectionTitle}>
+                Routine calendar
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.sectionSubtitle}>
+            Keep track of your routine without needing the
+            full routine on your homepage.
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.weekRow}
+          >
+            {weekDates.map((date) => {
+              const dayIndex = date.getDay();
+
+              const tasksForDay = weeklyTasks.filter(
+                (task) => task.dayIndex === dayIndex
+              );
+
+              const isToday =
+                toDateKey(date) === toDateKey(today);
 
               return (
-                <RoutineTaskCard
-                  key={task.id}
-                  task={task}
-                  isChecked={isChecked}
-                  onPress={() => toggleTask(taskKey)}
-                />
+                <View
+                  key={toDateKey(date)}
+                  style={[
+                    styles.dayCard,
+                    isToday && styles.dayCardToday,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayName,
+                      isToday && styles.dayNameToday,
+                    ]}
+                  >
+                    {date.toLocaleDateString(undefined, {
+                      weekday: 'short',
+                    })}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.dayNumber,
+                      isToday && styles.dayNumberToday,
+                    ]}
+                  >
+                    {date.getDate()}
+                  </Text>
+
+                  <View style={styles.dayTaskWrap}>
+                    {tasksForDay.length === 0 ? (
+                      <Text
+                        style={[
+                          styles.noTaskText,
+                          isToday &&
+                            styles.noTaskTextToday,
+                        ]}
+                      >
+                        Rest
+                      </Text>
+                    ) : (
+                      tasksForDay.map((task) => {
+                        const taskKey = `${weekKey}-${task.id}`;
+
+                        const isChecked =
+                          !!checkedTasks[taskKey];
+
+                        return (
+                          <Pressable
+                            key={task.id}
+                            onPress={() =>
+                              toggleTask(taskKey)
+                            }
+                            style={[
+                              styles.dayTaskDot,
+                              isChecked &&
+                                styles.dayTaskDotDone,
+                            ]}
+                          >
+                            <Ionicons
+                              name={
+                                isChecked
+                                  ? 'checkmark'
+                                  : task.icon
+                              }
+                              size={14}
+                              color={
+                                isChecked
+                                  ? COLORS.white
+                                  : COLORS.oxfordBlue
+                              }
+                            />
+                          </Pressable>
+                        );
+                      })
+                    )}
+                  </View>
+                </View>
               );
             })}
+          </ScrollView>
+
+          {/* WEEKLY PROGRESS */}
+
+          <View style={styles.progressCard}>
+            <View style={styles.progressTop}>
+              <View>
+                <Text style={styles.progressTitle}>
+                  Weekly consistency
+                </Text>
+
+                <Text style={styles.progressSubtitle}>
+                  {completedCount} of {weeklyTasks.length}{' '}
+                  routine moments complete
+                </Text>
+              </View>
+
+              <Text style={styles.progressPercent}>
+                {progressPercent}%
+              </Text>
+            </View>
+
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${progressPercent}%`,
+                  },
+                ]}
+              />
+            </View>
           </View>
-        )}
+        </View>
+
+        {/* TODAY'S ROUTINE TASK */}
+
+        <View style={styles.sectionSpacing}>
+          <View style={styles.sectionHeadingRow}>
+            <View>
+              <Text style={styles.sectionKicker}>
+                TODAY
+              </Text>
+
+              <Text style={styles.sectionTitle}>
+                Today’s routine
+              </Text>
+            </View>
+          </View>
+
+          {todayTasks.length === 0 ? (
+            <View style={styles.noTodayTaskCard}>
+              <View style={styles.taskIcon}>
+                <Ionicons
+                  name="moon-outline"
+                  size={22}
+                  color={COLORS.oxfordBlue}
+                />
+              </View>
+
+              <View style={styles.taskContent}>
+                <Text style={styles.noTodayTitle}>
+                  Nothing scheduled today
+                </Text>
+
+                <Text style={styles.noTodayText}>
+                  Give your hair a break and check how your
+                  current products are wearing.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.taskList}>
+              {todayTasks.map((task) => {
+                const taskKey = `${weekKey}-${task.id}`;
+
+                const isChecked =
+                  !!checkedTasks[taskKey];
+
+                return (
+                  <RoutineTaskCard
+                    key={task.id}
+                    task={task}
+                    isChecked={isChecked}
+                    onPress={() =>
+                      toggleTask(taskKey)
+                    }
+                  />
+                );
+              })}
+            </View>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -526,512 +817,630 @@ function RoutineTaskCard({
 }) {
   return (
     <Pressable
-      style={[styles.taskCard, isChecked && styles.taskCardDone]}
+      style={[
+        styles.taskCard,
+        isChecked && styles.taskCardDone,
+      ]}
       onPress={onPress}
     >
       <View style={styles.taskIcon}>
         <Ionicons
           name={isChecked ? 'checkmark' : task.icon}
-          size={23}
-          color="#111827"
+          size={22}
+          color={COLORS.oxfordBlue}
         />
       </View>
 
-      <View style={{ flex: 1 }}>
-        <Text style={styles.taskTitle}>{task.title}</Text>
-        <Text style={styles.taskDescription}>{task.description}</Text>
+      <View style={styles.taskContent}>
+        <Text style={styles.taskTitle}>
+          {task.title}
+        </Text>
+
+        <Text style={styles.taskDescription}>
+          {task.description}
+        </Text>
       </View>
 
-      <View style={[styles.checkCircle, isChecked && styles.checkCircleDone]}>
-        {isChecked && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+      <View
+        style={[
+          styles.checkCircle,
+          isChecked && styles.checkCircleDone,
+        ]}
+      >
+        {isChecked && (
+          <Ionicons
+            name="checkmark"
+            size={16}
+            color={COLORS.white}
+          />
+        )}
       </View>
     </Pressable>
   );
 }
 
 function toDateKey(date: Date) {
-  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  return `${date.getFullYear()}-${
+    date.getMonth() + 1
+  }-${date.getDate()}`;
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#FFF7F0',
+    backgroundColor: COLORS.background,
   },
+
   content: {
-  paddingHorizontal: PAGE_HORIZONTAL_PADDING,
-},
-  hero: {
-    minHeight: 370,
-    backgroundColor: '#111827',
-    borderRadius: 38,
-    padding: 24,
-    overflow: 'hidden',
-    marginBottom: 18,
+    paddingHorizontal: PAGE_HORIZONTAL_PADDING,
   },
-  heroCircleOne: {
-    position: 'absolute',
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: '#D97706',
-    top: -48,
-    right: -48,
-    opacity: 0.95,
-  },
-  heroCircleTwo: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: '#FBBF24',
-    bottom: 54,
-    left: -46,
-    opacity: 0.35,
-  },
-  heroCircleThree: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#FFFFFF',
-    bottom: -22,
-    right: 42,
-    opacity: 0.12,
-  },
-  heroTop: {
+
+  topHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 16,
-  },
-  heroEyebrow: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FBBF24',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroTitle: {
-    marginTop: 8,
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -1.2,
-  },
-  dateBadge: {
-    width: 66,
-    height: 78,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dateDay: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#D97706',
-    textTransform: 'uppercase',
-  },
-  dateNumber: {
-    marginTop: 2,
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  tipWrap: {
-    marginTop: 42,
-  },
-  tipLabel: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#FBBF24',
-    textTransform: 'uppercase',
-    letterSpacing: 0.9,
-  },
-  tipText: {
-    marginTop: 12,
-    fontSize: 28,
-    lineHeight: 36,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  heroBottomRow: {
-    marginTop: 32,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  heroMiniStat: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 20,
-    padding: 12,
-  },
-  heroMiniValue: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  heroMiniLabel: {
-    marginTop: 3,
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#D1D5DB',
-  },
-  forecastCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    padding: 18,
-    flexDirection: 'row',
-    gap: 14,
     marginBottom: 18,
   },
-  forecastIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#FFF1E6',
+
+  brandName: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: COLORS.green,
+  },
+
+  greeting: {
+    marginTop: 3,
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    color: COLORS.oxfordBlue,
+  },
+
+  profileBubble: {
+    width: 60,
+    height: 60,
+    borderRadius: 21,
+    backgroundColor: COLORS.lemonCream,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  forecastLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#D97706',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  forecastTitle: {
-    marginTop: 4,
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  forecastText: {
-    marginTop: 7,
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#4B5563',
-  },
-  compatibilityCard: {
-    backgroundColor: '#D97706',
-    borderRadius: 30,
-    padding: 20,
-    flexDirection: 'row',
-    gap: 18,
-    marginBottom: 26,
-  },
-  compatibilityLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FFF7ED',
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
-  compatibilityScore: {
-    marginTop: 6,
-    fontSize: 44,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  compatibilityRight: {
-    flex: 1,
+
+  /**
+   * Smaller hero.
+   * The previous version had minHeight: 370.
+   */
+  hero: {
+    minHeight: 160,
+    borderRadius: 26,
+    backgroundColor: COLORS.lemonCream,
+    overflow: 'hidden',
+    borderColor: COLORS.lightBorder,
+    borderWidth: 1,
+    padding: 22,
     justifyContent: 'center',
   },
-  compatibilityText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#FFFFFF',
-    fontWeight: '700',
+
+  heroAccentCircle: {
+    position: 'absolute',
+    width: 135,
+    height: 135,
+    borderRadius: 68,
+    backgroundColor: COLORS.lightBlue,
+    right: -55,
+    top: -48,
+    opacity: 0.8,
   },
-  editRoutineLink: {
-    marginTop: 10,
-    color: '#111827',
-    fontSize: 14,
+
+  heroContent: {
+    maxWidth: '86%',
+  },
+
+  heroTitle: {
+    fontSize: 27,
+    lineHeight: 31,
+    letterSpacing: -0.7,
     fontWeight: '900',
-    textDecorationLine: 'underline',
+    color: COLORS.oxfordBlue,
   },
-  sectionHeader: {
-    marginBottom: 14,
-  },
-  sectionKicker: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#D97706',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#111827',
-    letterSpacing: -0.5,
-  },
-  sectionSubtitle: {
-    marginTop: 6,
+
+  heroText: {
+    marginTop: 8,
     fontSize: 14,
     lineHeight: 20,
-    color: '#6B7280',
+    fontWeight: '600',
+    color: COLORS.brown,
   },
-  routineList: {
-    gap: 12,
-    marginBottom: 26,
-  },
-  routineStepCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
+
+  profileChips: {
     flexDirection: 'row',
-    gap: 14,
+    gap: 8,
+    marginTop: 14,
   },
-  stepNumber: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#111827',
+
+  profileChip: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  profileChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.oxfordBlue,
+  },
+
+  /**
+   * Scan button now sits BELOW the hero.
+   */
+  scanButton: {
+    marginTop: 12,
+    minHeight: 78,
+    borderRadius: 24,
+    paddingHorizontal: 17,
+    paddingVertical: 14,
+    backgroundColor: COLORS.oxfordBlue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+  },
+
+  buttonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
+  },
+
+  scanIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: COLORS.lightBlue,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepNumberText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
+
+  scanTextWrap: {
+    flex: 1,
   },
-  stepTitle: {
+
+  scanTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#111827',
+    color: COLORS.white,
   },
-  stepFrequency: {
+
+  scanSubtitle: {
     marginTop: 3,
     fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: '#E7ECF4',
+  },
+
+  sectionSpacing: {
+    marginTop: 30,
+  },
+
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: 16,
+  },
+
+  sectionKicker: {
+    marginBottom: 4,
+    fontSize: 11,
     fontWeight: '900',
-    color: '#D97706',
+    color: COLORS.green,
+    letterSpacing: 1,
   },
-  stepProduct: {
+
+  sectionTitle: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: COLORS.oxfordBlue,
+    letterSpacing: -0.5,
+  },
+
+  sectionSubtitle: {
     marginTop: 7,
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#374151',
+    fontSize: 13,
+    lineHeight: 19,
+    color: COLORS.mutedText,
   },
-  stepNote: {
+
+  /**
+   * ROUTINE COMPATIBILITY
+   */
+
+  compatibilityCard: {
+    marginTop: 14,
+    backgroundColor: COLORS.white,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: COLORS.lightBorder,
+    padding: 18,
+  },
+
+  compatibilityTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 18,
+  },
+
+  compatibilityStatus: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.green,
+  },
+
+  compatibilityDescription: {
+    maxWidth: 220,
     marginTop: 5,
     fontSize: 13,
     lineHeight: 19,
-    color: '#6B7280',
+    color: COLORS.mutedText,
   },
-  weekRow: {
-    gap: 10,
-    paddingBottom: 18,
+
+  scoreCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#E9EEDC',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dayCard: {
-    width: 82,
-    height: 142,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
+
+  scoreText: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: COLORS.green,
+  },
+
+  compatibilityTrack: {
+    marginTop: 18,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#EEF0E9',
+    overflow: 'hidden',
+  },
+
+  compatibilityFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: COLORS.green,
+  },
+
+  goalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 14,
+  },
+
+  goalChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.lemonCream,
+  },
+
+  goalChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.brown,
+  },
+
+  compatibilityLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    alignSelf: 'flex-start',
+  },
+
+  compatibilityLinkText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.oxfordBlue,
+  },
+
+  /**
+   * DISCOVER
+   */
+
+  seeAllText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.green,
+  },
+
+  productRow: {
+    gap: 12,
+    paddingTop: 14,
+    paddingRight: 20,
+  },
+
+  productCard: {
+    width: 165,
+    borderRadius: 24,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#F3D5C0',
-    padding: 12,
+    borderColor: COLORS.lightBorder,
+    overflow: 'hidden',
+  },
+
+  productPressed: {
+    opacity: 0.88,
+  },
+
+  productVisual: {
+    height: 138,
+    padding: 15,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  dayCardToday: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
+
+  matchBadge: {
+    position: 'absolute',
+    left: 10,
+    bottom: 10,
+    borderRadius: 999,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
-  dayName: {
-    fontSize: 12,
+
+  matchBadgeText: {
+    fontSize: 10,
     fontWeight: '900',
-    color: '#6B7280',
+    color: COLORS.green,
+  },
+
+  productInfo: {
+    padding: 13,
+  },
+
+  productBrand: {
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    color: COLORS.green,
+  },
+
+  productName: {
+    marginTop: 4,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900',
+    color: COLORS.oxfordBlue,
+  },
+
+  productCategory: {
+    marginTop: 5,
+    fontSize: 11,
+    color: COLORS.mutedText,
+  },
+
+  /**
+   * CALENDAR
+   */
+
+  weekRow: {
+    gap: 9,
+    paddingTop: 15,
+    paddingBottom: 16,
+    paddingRight: 20,
+  },
+
+  dayCard: {
+    width: 72,
+    height: 122,
+    borderRadius: 23,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.lightBorder,
+    padding: 10,
+    alignItems: 'center',
+  },
+
+  dayCardToday: {
+    backgroundColor: COLORS.oxfordBlue,
+    borderColor: COLORS.oxfordBlue,
+  },
+
+  dayName: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.mutedText,
     textTransform: 'uppercase',
   },
+
   dayNameToday: {
-    color: '#FBBF24',
+    color: COLORS.lightBlue,
   },
+
   dayNumber: {
-    marginTop: 7,
-    fontSize: 27,
+    marginTop: 6,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#111827',
+    color: COLORS.oxfordBlue,
   },
+
   dayNumberToday: {
-    color: '#FFFFFF',
+    color: COLORS.white,
   },
+
   dayTaskWrap: {
     marginTop: 'auto',
-    minHeight: 36,
+    minHeight: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
   },
+
   noTaskText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#9CA3AF',
   },
+
   noTaskTextToday: {
-    color: '#D1D5DB',
+    color: '#CFD7E3',
   },
+
   dayTaskDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#FFF1E6',
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: COLORS.lemonCream,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   dayTaskDotDone: {
-    backgroundColor: '#D97706',
+    backgroundColor: COLORS.green,
   },
+
+  /**
+   * WEEKLY PROGRESS
+   */
+
   progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    padding: 18,
+    backgroundColor: COLORS.white,
+    borderRadius: 23,
+    padding: 17,
     borderWidth: 1,
-    borderColor: '#F3D5C0',
-    marginBottom: 26,
+    borderColor: COLORS.lightBorder,
   },
+
   progressTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 11,
   },
+
   progressTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
-    color: '#111827',
+    color: COLORS.oxfordBlue,
   },
+
   progressSubtitle: {
     marginTop: 3,
-    fontSize: 13,
-    color: '#6B7280',
+    fontSize: 12,
+    color: COLORS.mutedText,
   },
+
   progressPercent: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '900',
-    color: '#D97706',
+    color: COLORS.green,
   },
+
   progressTrack: {
-    height: 10,
+    height: 8,
     borderRadius: 999,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EEF0E9',
     overflow: 'hidden',
   },
+
   progressFill: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#D97706',
+    backgroundColor: COLORS.green,
   },
+
+  /**
+   * TODAY TASKS
+   */
+
   noTodayTaskCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    padding: 18,
+    marginTop: 14,
+    backgroundColor: COLORS.white,
+    borderRadius: 23,
+    padding: 17,
     flexDirection: 'row',
-    gap: 14,
+    gap: 13,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#F3D5C0',
-    marginBottom: 26,
+    borderColor: COLORS.lightBorder,
   },
-  noTodayTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  noTodayText: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#6B7280',
-  },
+
   taskList: {
-    gap: 12,
-    marginBottom: 26,
+    marginTop: 14,
+    gap: 11,
   },
+
   taskCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    padding: 18,
+    backgroundColor: COLORS.white,
+    borderRadius: 23,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#F3D5C0',
+    borderColor: COLORS.lightBorder,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 13,
   },
+
   taskCardDone: {
-    opacity: 0.82,
+    opacity: 0.72,
   },
+
   taskIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#FFF1E6',
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: COLORS.lemonCream,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  taskContent: {
+    flex: 1,
+  },
+
   taskTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
-    color: '#111827',
+    color: COLORS.oxfordBlue,
   },
+
   taskDescription: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#6B7280',
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 18,
+    color: COLORS.mutedText,
   },
+
+  noTodayTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.oxfordBlue,
+  },
+
+  noTodayText: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 18,
+    color: COLORS.mutedText,
+  },
+
   checkCircle: {
-    width: 28,
-    height: 28,
+    width: 27,
+    height: 27,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#D1D5DB',
+    borderColor: '#D4D9DE',
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   checkCircleDone: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
+    backgroundColor: COLORS.green,
+    borderColor: COLORS.green,
   },
-  heroValueStatement: {
-  marginTop: 10,
-  fontSize: 15,
-  lineHeight: 22,
-  color: '#E5E7EB',
-  fontWeight: '700',
-},
-primaryScanCard: {
-  backgroundColor: '#D97706',
-  borderRadius: 30,
-  padding: 18,
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 14,
-  marginBottom: 18,
-},
-primaryScanIcon: {
-  width: 58,
-  height: 58,
-  borderRadius: 29,
-  backgroundColor: '#FFFFFF',
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-primaryScanTitle: {
-  fontSize: 20,
-  fontWeight: '900',
-  color: '#FFFFFF',
-},
-primaryScanText: {
-  marginTop: 4,
-  fontSize: 13,
-  lineHeight: 19,
-  color: '#FFF7ED',
-  fontWeight: '700',
-},
 });

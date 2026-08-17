@@ -20,12 +20,90 @@ export type HairGoal =
   | 'Repair'
   | 'Heat protection'
   | 'Color care';
+export type ScalpType =
+  | 'Balanced'
+  | 'Dry'
+  | 'Oily'
+  | 'Sensitive'
+  | 'Flaky'
+  | 'Dandruff-prone'
+  | 'Seborrheic dermatitis'
+  | 'Psoriasis'
+  | 'Eczema'
+  | 'Scalp acne'
+  | 'Thinning edges'
+  | 'CCCA'
+  | 'Other';
+
+export type ChemicalHistory =
+  | 'Virgin'
+  | 'Colored'
+  | 'Relaxed'
+  | 'Transitioning'
+  | 'Heat damaged';
+
+export type HairStyle =
+  | 'Braids'
+  | 'Locs'
+  | 'Sew-in / Wig'
+  | 'Twist-out'
+  | 'None';
+
+export type HeadCovering =
+  | 'Hijab'
+  | 'Durag'
+  | 'Bonnet-only'
+  | 'None';
 
 export type Porosity = 'Low' | 'Medium' | 'High' | 'Unsure';
 
 export type Density = 'Fine' | 'Medium' | 'Thick' | 'Unsure';
 
-export type ScalpType = 'Balanced' | 'Dry' | 'Oily' | 'Sensitive' | 'Flaky';
+//export type ScalpType = 'Balanced' | 'Dry' | 'Oily' | 'Sensitive' | 'Flaky';
+
+export type IngredientProvenance =
+  | 'verified_off'
+  | 'retailer_extracted'
+  | 'user_photo_ocr';
+
+export type ProductIdentitySource =
+  | 'firestore'
+  | 'open_facts'
+  | 'upcitemdb';
+
+export type ProductSourceInfo = {
+  provenance: IngredientProvenance;
+  identitySource: ProductIdentitySource;
+  ingredientSourceUrl?: string;
+  retailerDomain?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  resolvedAt: string;
+};
+
+export type ProductIdentity = {
+  barcode: string;
+  name: string;
+  brand: string;
+  category?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  source: ProductIdentitySource;
+};
+
+export type ProductLookupResult =
+  | {
+      status: 'resolved';
+      product: HairProduct;
+    }
+  | {
+      status: 'needs_ocr';
+      barcode: string;
+      identity?: ProductIdentity;
+      reason:
+        | 'identity-not-found'
+        | 'ingredients-not-found'
+        | 'identity-service-unavailable';
+    };
 
 export type HairProduct = {
   id: string;
@@ -34,9 +112,12 @@ export type HairProduct = {
   category: ProductCategory;
   price?: string;
   imageEmoji?: string;
+  imageUrl?: string;
   barcodes?: string[];
   description: string;
   ingredients: string[];
+  sourceInfo?: ProductSourceInfo;
+
 
   bestFor: string[];
   tags: string[];
@@ -59,9 +140,18 @@ export type HairProfileForMatching = {
   porosity: Porosity | string;
   density: Density | string;
   scalp: ScalpType | string;
+
+  chemicalHistory?: ChemicalHistory;
+  style?: HairStyle;
+  headCovering?: HeadCovering;
+
+  styleInstallDate?: string;
+  styleRemovalDate?: string;
+
   goals: string[];
   allergies?: string;
   routineFocus?: string;
+
   routineSteps?: {
     id: string;
     title: string;
@@ -71,13 +161,40 @@ export type HairProfileForMatching = {
   }[];
 };
 
+
 export type CompatibilityResult = {
   productId: string;
+
   score: number;
-  label: 'Strong Match' | 'Good Match' | 'Possible Match' | 'Low Match';
+
+  label:
+    | 'Strong Match'
+    | 'Good Match'
+    | 'Possible Match'
+    | 'Low Match';
+
+  confidence:
+    | 'High'
+    | 'Medium'
+    | 'Low';
+
+  confidenceReason: string;
+
   summary: string;
+
   reasons: string[];
+
   cautions: string[];
+
   routineFit: string;
+
   ingredientHighlights: string[];
+
+  scoreBreakdown: {
+    ingredientFit: number;
+    goalFit: number;
+    profileFit: number;
+    routineFit: number;
+    cautionPenalty: number;
+  };
 };

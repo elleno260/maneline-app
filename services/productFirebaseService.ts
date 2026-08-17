@@ -1,30 +1,13 @@
 import { db } from '../firebaseConfig';
 import { productCatalog } from '../data/productCatalog';
-import type {
-  HairProduct,
-  ProductCategory,
-} from '../types/product.types';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from 'firebase/firestore';
-
+import type {HairProduct,ProductCategory,} from '../types/product.types';
+import {collection,doc,getDoc,getDocs,limit,orderBy, query,serverTimestamp,setDoc,where,} from 'firebase/firestore';
+import { resolveRetailerIngredients } from './retailerIngredientService';
 import { findIngredientsWithGemini } from './geminiIngredientService';
 import { lookupInciBeautyProduct } from './inciBeautyService';
 import { lookupOpenBeautyFactsProduct } from './openBeautyFactsService';
 import { normalizeExternalProductToHairProduct } from './productNormalizerService';
-import {
-  lookupUPCItemdb,
-  type UpcItemProduct,
-} from './upcItemDbService';
+import {lookupUPCItemdb, type UpcItemProduct,} from './upcItemDbService';
 
 const PRODUCTS_COLLECTION = 'products';
 const ENABLE_INCI_LOOKUP = false;
@@ -104,61 +87,56 @@ function normalizeUpcCategory(
   return 'Styler';
 }
 
-async function addGeminiIngredients(
+async function enrichProductWithRetailerIngredients(
   product: HairProduct,
   barcode: string
 ): Promise<HairProduct> {
-  if (hasIngredients(product) || !hasUsableIdentity(product)) {
+  if (!product.name || !product.brand) {
+    return product;
+  }
+
+  const retailerResult =
+    await resolveRetailerIngredients({
+      barcode,
+      productName: product.name,
+      brand: product.brand,
+    }).catch((error) => {
+      console.warn(
+        '[ManeLine lookup] Retailer ingredient lookup failed:',
+        error
+      );
+
+      return null;
+    });
+
+  if (
+    !retailerResult?.found ||
+    !Array.isArray(retailerResult.ingredients) ||
+    retailerResult.ingredients.length === 0
+  ) {
+    console.log(
+      '[ManeLine lookup] Retailer did not verify ingredients:',
+      barcode
+    );
+
     return product;
   }
 
   console.log(
-    '[ManeLine lookup] Product identified without ingredients. Trying Gemini:',
+    '[ManeLine lookup] Retailer verified ingredients:',
     {
       barcode,
-      name: product.name,
-      brand: product.brand,
+      ingredientCount: retailerResult.ingredients.length,
+      confidence: retailerResult.confidence,
+      source: retailerResult.sourceDomain,
     }
   );
 
-  const geminiResult = await findIngredientsWithGemini({
-    barcode,
-    productName: product.name,
-    brand: product.brand,
-    category: product.category,
-    description: product.description,
-  }).catch((error) => {
-    console.warn(
-      '[ManeLine lookup] Gemini ingredient lookup failed:',
-      error
-    );
-    return null;
-  });
-
-  if (
-    !geminiResult?.found ||
-    !Array.isArray(geminiResult.ingredients) ||
-    geminiResult.ingredients.length === 0
-  ) {
-    console.log(
-      '[ManeLine lookup] Gemini did not verify ingredients:',
-      barcode
-    );
-    return product;
-  }
-
-  console.log('[ManeLine lookup] Gemini verified ingredients:', {
-    barcode,
-    ingredientCount: geminiResult.ingredients.length,
-    confidence: geminiResult.confidence,
-  });
-
   return {
     ...product,
-    ingredients: geminiResult.ingredients,
+    ingredients: retailerResult.ingredients,
   };
 }
-
 function buildUpcHairProduct(args: {
   barcode: string;
   product: UpcItemProduct;
@@ -301,6 +279,7 @@ export async function saveProductToFirestore(product: HairProduct) {
   return product;
 }
 
+
 export async function getOrImportProductByBarcode(
   barcode: string
 ): Promise<HairProduct | null> {
@@ -327,7 +306,7 @@ export async function getOrImportProductByBarcode(
       ingredientCount: normalizedExistingProduct.ingredients.length,
     });
 
-    return addGeminiIngredients(
+    return enrichProductWithRetailerIngredients(
       normalizedExistingProduct,
       cleanedBarcode
     );
@@ -356,7 +335,7 @@ export async function getOrImportProductByBarcode(
         ingredientCount: inciProduct.ingredients.length,
       });
 
-      return addGeminiIngredients(inciProduct, cleanedBarcode);
+      return enrichProductWithRetailerIngredients(inciProduct, cleanedBarcode);
     }
 
     console.log(
@@ -365,31 +344,161 @@ export async function getOrImportProductByBarcode(
     );
   }
 
-  // 3. Try Open Beauty Facts.
-  const openFactsResult = await lookupOpenBeautyFactsProduct(
+ /**
+ * 3. Try Open Facts / Open Beauty Facts.
+ *
+ * Rules:
+ * - Real identity + ingredients = done.
+ * - Real identity + no ingredients = try retailer resolver.
+ * - Placeholder identity = treat as a miss and continue to UPCitemdb.
+ */
+console.log(
+  '[ManeLine lookup] Trying Open Facts:',
+  cleanedBarcode
+);
+
+const openFactsResult =
+  await lookupOpenBeautyFactsProduct(
     cleanedBarcode
   ).catch((error) => {
-    console.warn('[ManeLine lookup] Open Facts lookup failed:', error);
+    console.warn(
+      '[ManeLine lookup] Open Facts lookup failed:',
+      error
+    );
+
     return null;
   });
 
-  if (openFactsResult?.found) {
-    const openFactsProduct = normalizeExternalProductToHairProduct({
+if (openFactsResult?.found) {
+  const openFactsIngredients =
+    openFactsResult.ingredients ?? [];
+
+  const openFactsProduct =
+    normalizeExternalProductToHairProduct({
       ...openFactsResult,
-      ingredients: openFactsResult.ingredients ?? [],
+      ingredients: openFactsIngredients,
     });
 
-    console.log('[ManeLine lookup] Found through Open Facts:', {
+  console.log(
+    '[ManeLine lookup] Found through Open Facts:',
+    {
       name: openFactsProduct.name,
       brand: openFactsProduct.brand,
-      ingredientCount: openFactsProduct.ingredients.length,
-    });
+      ingredientCount:
+        openFactsProduct.ingredients.length,
+    }
+  );
 
-    return addGeminiIngredients(
-      openFactsProduct,
+  /*
+   * CASE 1:
+   * Open Facts technically returned a result,
+   * but it is only placeholder information.
+   *
+   * Example:
+   * name: "Unknown product"
+   * brand: "Unknown brand"
+   *
+   * Do NOT send that to Tavily.
+   * Continue down to UPCitemdb instead.
+   */
+  if (!hasUsableIdentity(openFactsProduct)) {
+    console.log(
+      '[ManeLine lookup] Open Facts identity was incomplete; continuing to UPCitemdb:',
       cleanedBarcode
     );
   }
+
+  /*
+   * CASE 2:
+   * Open Facts gave us a valid product
+   * AND an ingredient list.
+   *
+   * This product is already resolved.
+   * Do NOT call Tavily.
+   */
+  else if (hasIngredients(openFactsProduct)) {
+    console.log(
+      '[ManeLine lookup] Open Facts fully resolved product; skipping retailer lookup:',
+      {
+        name: openFactsProduct.name,
+        ingredientCount:
+          openFactsProduct.ingredients.length,
+      }
+    );
+
+    return openFactsProduct;
+  }
+
+  /*
+   * CASE 3:
+   * Open Facts gave us a valid product identity,
+   * but there are no ingredients.
+   *
+   * Now Tavily + grounded Gemini extraction
+   * should try approved retailer pages.
+   */
+  else {
+    console.log(
+      '[ManeLine lookup] Open Facts identified product but ingredients are missing; trying retailer resolver:',
+      {
+        name: openFactsProduct.name,
+        brand: openFactsProduct.brand,
+      }
+    );
+
+    const retailerProduct =
+      await enrichProductWithRetailerIngredients(
+        openFactsProduct,
+        cleanedBarcode
+      );
+
+    /*
+     * Retailer successfully supplied ingredients.
+     */
+    if (hasIngredients(retailerProduct)) {
+      console.log(
+        '[ManeLine lookup] Retailer resolved Open Facts product:',
+        {
+          name: retailerProduct.name,
+          ingredientCount:
+            retailerProduct.ingredients.length,
+        }
+      );
+
+      return retailerProduct;
+    }
+
+    /*
+     * We still know which product this is,
+     * so keep that identity.
+     *
+     * Your scan screen can now recognize that
+     * the product exists but needs an ingredient
+     * label/OCR scan.
+     */
+    console.log(
+      '[ManeLine lookup] Product identified, but ingredients remain unresolved; OCR fallback needed:',
+      {
+        name: openFactsProduct.name,
+        brand: openFactsProduct.brand,
+      }
+    );
+
+    return openFactsProduct;
+  }
+}
+
+/*
+ * Open Facts completely missed OR returned
+ * unusable placeholder data.
+ *
+ * Execution continues into your existing
+ * UPCitemdb section below.
+ */
+console.log(
+  '[ManeLine lookup] Open Facts did not fully identify product; continuing fallback:',
+  cleanedBarcode
+);
 
   // 4. Open Beauty Facts failed, so identify the product with UPCitemdb.
   console.log(
@@ -469,16 +578,22 @@ if (!upcProduct.name || !upcProduct.brand) {
   return null;
 }
 
-const geminiResult =
-  await findIngredientsWithGemini({
+console.log(
+  '[ManeLine lookup] Trying retailer ingredient resolver:',
+  {
+    productName: upcProduct.name,
+    brand: upcProduct.brand,
+  }
+);
+
+const retailerResult =
+  await resolveRetailerIngredients({
     barcode: cleanedBarcode,
     productName: upcProduct.name,
     brand: upcProduct.brand,
-    category: upcProduct.category,
-    description: upcProduct.description,
   }).catch((error) => {
     console.warn(
-      '[ManeLine lookup] Gemini ingredient search failed:',
+      '[ManeLine lookup] Retailer ingredient lookup failed:',
       error
     );
 
@@ -486,15 +601,26 @@ const geminiResult =
   });
 
 if (
-  !geminiResult?.found ||
-  geminiResult.ingredients.length === 0
+  !retailerResult?.found ||
+  retailerResult.ingredients.length === 0
 ) {
   console.log(
-    '[ManeLine lookup] Product identified, but ingredients were not verified'
+    '[ManeLine lookup] Product identified, but retailer ingredients were not verified:',
+    retailerResult?.reason
   );
 
   return null;
 }
+
+console.log(
+  '[ManeLine lookup] Retailer ingredients verified:',
+  {
+    source: retailerResult.sourceDomain,
+    confidence: retailerResult.confidence,
+    ingredientCount:
+      retailerResult.ingredients.length,
+  }
+);
 
   const baseUpcHairProduct = buildUpcHairProduct({
     barcode: cleanedBarcode,
@@ -502,7 +628,7 @@ if (
     ingredients: [],
   });
 
-  return addGeminiIngredients(
+  return enrichProductWithRetailerIngredients(
     baseUpcHairProduct,
     cleanedBarcode
   );

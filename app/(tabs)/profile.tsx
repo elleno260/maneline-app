@@ -1,26 +1,45 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import type { ComponentProps } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import type {
+  ComponentProps,
+  Dispatch,
+  SetStateAction,
+} from 'react';
+
 import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  PAGE_HORIZONTAL_PADDING,
-  PAGE_TOP_PADDING,
-  TAB_BOTTOM_PADDING,
-} from '../../constants/layout';
-type IconName = ComponentProps<typeof Ionicons>['name'];
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';import {Alert,Modal, Pressable,ScrollView,StyleSheet,Switch,Text,TextInput,View,} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {PAGE_HORIZONTAL_PADDING, PAGE_TOP_PADDING,TAB_BOTTOM_PADDING,} from '../../constants/layout';
+
+type IconName =
+  ComponentProps<typeof Ionicons>['name'];
+
+/* =========================================================
+   COLORS
+   ========================================================= */
+
+const COLORS = {
+  lemonCream: '#FFF9C7',
+  brown: '#3D2920',
+  lightBlue: '#95BFFF',
+  oxfordBlue: '#20314B',
+  green: '#667D41',
+
+  white: '#FFFFFF',
+  background: '#FFFDF2',
+
+  mutedText: '#6B7280',
+  lightBorder: '#E7E2CB',
+  danger: '#B91C1C',
+};
+
+/* =========================================================
+   TYPES
+   ========================================================= */
 
 type RoutineStep = {
   id: string;
@@ -33,585 +52,2408 @@ type RoutineStep = {
 type HairProfile = {
   displayName: string;
   email: string;
+
   hairType: string;
   porosity: string;
+
+  /*
+   * Texture = thickness of an individual strand.
+   * Fine / Medium / Coarse.
+   */
+  texture: string;
+
+  /*
+   * Density = overall amount of hair.
+   * Thin / Medium / Thick.
+   */
   density: string;
+
   scalp: string;
+
+  chemicalHistory: string;
+
+  /* -----------------------------------------
+     OPTIONAL HAIRSTYLE
+  ----------------------------------------- */
+
+  hairstyleEnabled: boolean;
+  hairstyle: string;
+
+  styleInstallDate: string;
+  styleRemovalDate: string;
+
+  /* -----------------------------------------
+     OPTIONAL SCALP CONDITION
+  ----------------------------------------- */
+
+  scalpConditionEnabled: boolean;
+  scalpCondition: string;
+
+  /* -----------------------------------------
+     OPTIONAL HEAD COVERING
+  ----------------------------------------- */
+
+  headCoveringEnabled: boolean;
+  headCovering: string;
+
+  /* -----------------------------------------
+     PERSONALIZATION
+  ----------------------------------------- */
+
   goals: string[];
-  routineFocus: string;
-  routineSteps: RoutineStep[];
-  routineCompatibilityScore: number;
+
+
+  routineSteps:
+    RoutineStep[];
+
+  routineCompatibilityScore:
+    number;
+
   allergies: string;
 };
 
-type ActionItem = {
-  title: string;
-  subtitle: string;
-  icon: IconName;
-  onPress: () => void;
-};
+/* =========================================================
+   STORAGE
+   ========================================================= */
 
-const STORAGE_KEY = 'MANELINE_PROFILE_V1';
+const STORAGE_KEY =
+  'MANELINE_PROFILE_V1';
 
-const hairTypes = ['1A-2C', '3A', '3B', '3C', '4A', '4B', '4C'];
-const porosityOptions = ['Low', 'Medium', 'High', 'Unsure'];
-const densityOptions = ['Fine', 'Medium', 'Thick', 'Unsure'];
-const scalpOptions = ['Balanced', 'Dry', 'Oily', 'Sensitive', 'Flaky'];
+/* =========================================================
+   OPTIONS
+   ========================================================= */
+
+const hairTypes = [
+  '1A',
+  '1B',
+  '1C',
+
+  '2A',
+  '2B',
+  '2C',
+
+  '3A',
+  '3B',
+  '3C',
+
+  '4A',
+  '4B',
+  '4C',
+];
+
+const porosityOptions = [
+  'Low',
+  'Medium',
+  'High',
+];
+
+const textureOptions = [
+  'Fine',
+  'Medium',
+  'Coarse',
+];
+
+const densityOptions = [
+  'Thin',
+  'Medium',
+  'Thick',
+];
+
+/*
+ * General scalp behavior stays separate
+ * from scalp medical conditions.
+ */
+const scalpOptions = [
+  'Balanced',
+  'Dry',
+  'Oily',
+  'Sensitive',
+  'Flaky',
+];
+
+const chemicalHistoryOptions = [
+  'Virgin hair',
+  'Colored hair',
+  'Relaxed / permed hair',
+  'Heat damaged',
+  'Transitioning',
+];
+
+/*
+ * Toggle OFF represents "no active hairstyle."
+ * Therefore "None" does not need to appear
+ * inside the dropdown itself.
+ */
+const hairstyleOptions = [
+  'Braids',
+  'Locs',
+  'Sew-in / Wig',
+  'Twist-out',
+];
+
+/*
+ * Kept separate from normal scalp behavior.
+ */
+const scalpConditionOptions = [
+  'Dandruff',
+  'Seborrheic dermatitis',
+  'Psoriasis',
+  'Eczema',
+  'Scalp acne',
+  'Thinning edges',
+  'CCCA',
+  'Other',
+];
+
+const headCoveringOptions = [
+  'Hijab',
+  'Durag',
+  'Bonnet-only',
+];
 
 const goalOptions = [
   'Moisture',
   'Length retention',
-  'Growth',
-  'Thickness',
-  'Scalp health',
-  'Definition',
   'Repair',
-  'Heat protection',
-  'Color care',
+  'Scalp health',
+  'Growth',
+  'Definition',
+  'Volume',
+  'Frizz control',
+  'Strengthening',
 ];
 
-const defaultRoutineSteps: RoutineStep[] = [
+/* =========================================================
+   ROUTINE DEFAULT
+   ========================================================= */
+
+const defaultRoutineSteps:
+  RoutineStep[] = [
   {
     id: 'cleanse',
     title: 'Cleanse',
-    frequency: 'Every 7–10 days',
-    productType: 'Gentle shampoo or clarifying shampoo as needed',
-    note: 'Focus on removing buildup without stripping your hair.',
+    frequency:
+      'Every 7–10 days',
+    productType:
+      'Gentle shampoo or clarifying shampoo as needed',
+    note:
+      'Focus on removing buildup without stripping your hair.',
   },
+
   {
     id: 'deep-condition',
-    title: 'Deep condition',
+    title:
+      'Deep condition',
     frequency: 'Weekly',
-    productType: 'Moisturizing deep conditioner',
-    note: 'Use heat or steam if your hair struggles to absorb moisture.',
+    productType:
+      'Moisturizing deep conditioner',
+    note:
+      'Use heat or steam if your hair struggles to absorb moisture.',
   },
+
   {
     id: 'leave-in',
     title: 'Leave-in',
-    frequency: 'After every wash',
-    productType: 'Lightweight leave-in conditioner',
-    note: 'Apply in sections so the product distributes evenly.',
+    frequency:
+      'After every wash',
+    productType:
+      'Lightweight leave-in conditioner',
+    note:
+      'Apply in sections so the product distributes evenly.',
   },
+
   {
     id: 'seal-style',
     title: 'Seal + style',
-    frequency: 'After moisturizing',
-    productType: 'Light cream or gel depending on the style',
-    note: 'Avoid over-layering heavy products to reduce buildup.',
+    frequency:
+      'After moisturizing',
+    productType:
+      'Light cream or gel depending on the style',
+    note:
+      'Avoid over-layering heavy products to reduce buildup.',
   },
+
   {
     id: 'refresh',
     title: 'Refresh',
-    frequency: 'Midweek or as needed',
-    productType: 'Water-based mist or light moisturizer',
-    note: 'Only refresh if your hair feels dry. Do not add product just to add product.',
+    frequency:
+      'Midweek or as needed',
+    productType:
+      'Water-based mist or light moisturizer',
+    note:
+      'Only refresh if your hair feels dry.',
   },
 ];
 
-const defaultProfile: HairProfile = {
+/* =========================================================
+   DEFAULT PROFILE
+   ========================================================= */
+
+const defaultProfile:
+  HairProfile = {
   displayName: 'Ellen',
-  email: 'ellen@example.com',
+
+  email:
+    'ellen@example.com',
+
   hairType: '4C',
+
   porosity: 'Low',
-  density: 'Fine',
+
+  texture: 'Fine',
+
+  density: 'Thick',
+
   scalp: 'Dry',
-  goals: ['Moisture', 'Length retention', 'Growth', 'Thickness'],
-  routineFocus:
-    'Moisture-first routine with lightweight products and buildup control.',
-  routineCompatibilityScore: 91,
+
+  chemicalHistory:
+    'Virgin hair',
+
+  hairstyleEnabled:
+    false,
+
+  hairstyle: '',
+
+  styleInstallDate: '',
+
+  styleRemovalDate: '',
+
+  scalpConditionEnabled:
+    false,
+
+  scalpCondition: '',
+
+  headCoveringEnabled:
+    false,
+
+  headCovering: '',
+
+  goals: [
+    'Moisture',
+    'Length retention',
+    'Growth',
+  ],
+  routineCompatibilityScore:
+    91,
+
   allergies: '',
-  routineSteps: defaultRoutineSteps,
+
+  routineSteps:
+    defaultRoutineSteps,
 };
 
+/* =========================================================
+   PROFILE SCREEN
+   ========================================================= */
+
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<HairProfile>(defaultProfile);
-  const [draft, setDraft] = useState<HairProfile>(defaultProfile);
-  const [isEditing, setIsEditing] = useState(false);
-  const [routineReminders, setRoutineReminders] = useState(true);
-  const [ingredientAlerts, setIngredientAlerts] = useState(true);
-  const [marketplacePersonalization, setMarketplacePersonalization] =
+  const insets =
+    useSafeAreaInsets();
+
+  const [
+    profile,
+    setProfile,
+  ] =
+    useState<HairProfile>(
+      defaultProfile
+    );
+
+  const [
+    draft,
+    setDraft,
+  ] =
+    useState<HairProfile>(
+      defaultProfile
+    );
+
+  const [
+    isEditing,
+    setIsEditing,
+  ] =
+    useState(false);
+
+  const [
+    routineReminders,
+    setRoutineReminders,
+  ] =
     useState(true);
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  const [
+    ingredientAlerts,
+    setIngredientAlerts,
+  ] =
+    useState(true);
+
+  const [
+    recommendationPersonalization,
+    setRecommendationPersonalization,
+  ] =
+    useState(true);
+
+  /* =======================================================
+     LOAD
+     ======================================================= */
+useFocusEffect(
+  useCallback(() => {
+    void loadProfile();
+  }, [])
+);
 
   async function loadProfile() {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-
-    if (!raw) {
-      setProfile(defaultProfile);
-      setDraft(defaultProfile);
-      return;
-    }
-
     try {
-      const savedProfile = JSON.parse(raw) as Partial<HairProfile>;
+      const raw =
+        await AsyncStorage.getItem(
+          STORAGE_KEY
+        );
 
-      const mergedProfile: HairProfile = {
+      if (!raw) {
+        setProfile(
+          defaultProfile
+        );
+
+        setDraft(
+          defaultProfile
+        );
+
+        return;
+      }
+
+      /*
+       * style was the old field name.
+       * This lets profiles saved before this update
+       * migrate without breaking.
+       */
+      const saved =
+        JSON.parse(raw) as
+          Partial<HairProfile> & {
+            style?: string;
+          };
+
+      const legacyStyle =
+        saved.style &&
+        saved.style !== 'None'
+          ? saved.style
+          : '';
+
+      const savedHeadCovering =
+        saved.headCovering &&
+        saved.headCovering !==
+          'None'
+          ? saved.headCovering
+          : '';
+
+      /*
+       * Earlier versions mixed medical scalp
+       * conditions into the general scalp field.
+       * Migrate those values to scalpCondition.
+       */
+      const legacyScalpCondition =
+        saved.scalp &&
+        scalpConditionOptions.includes(
+          saved.scalp
+        )
+          ? saved.scalp
+          : '';
+
+      const mergedProfile:
+        HairProfile = {
         ...defaultProfile,
-        ...savedProfile,
-        goals: savedProfile.goals ?? defaultProfile.goals,
-        routineSteps: savedProfile.routineSteps ?? defaultProfile.routineSteps,
+        ...saved,
+
+        texture:
+          saved.texture ??
+          defaultProfile.texture,
+
+        scalp:
+          legacyScalpCondition
+            ? defaultProfile.scalp
+            : (
+                saved.scalp ??
+                defaultProfile.scalp
+              ),
+
+        hairstyleEnabled:
+          saved.hairstyleEnabled ??
+          Boolean(
+            saved.hairstyle ||
+              legacyStyle
+          ),
+
+        hairstyle:
+          saved.hairstyle ??
+          legacyStyle,
+
+        scalpConditionEnabled:
+          saved.scalpConditionEnabled ??
+          Boolean(
+            saved.scalpCondition ||
+              legacyScalpCondition
+          ),
+
+        scalpCondition:
+          saved.scalpCondition ??
+          legacyScalpCondition,
+
+        headCoveringEnabled:
+          saved.headCoveringEnabled ??
+          Boolean(
+            savedHeadCovering
+          ),
+
+        headCovering:
+          savedHeadCovering,
+
+        styleInstallDate:
+          saved.styleInstallDate ??
+          '',
+
+        styleRemovalDate:
+          saved.styleRemovalDate ??
+          '',
+
+        goals:
+          saved.goals ??
+          defaultProfile.goals,
+
+        routineSteps:
+          saved.routineSteps ??
+          defaultProfile
+            .routineSteps,
+
         routineCompatibilityScore:
-          savedProfile.routineCompatibilityScore ??
-          defaultProfile.routineCompatibilityScore,
+          saved
+            .routineCompatibilityScore ??
+          defaultProfile
+            .routineCompatibilityScore,
       };
 
-      setProfile(mergedProfile);
-      setDraft(mergedProfile);
-    } catch {
-      setProfile(defaultProfile);
-      setDraft(defaultProfile);
+      setProfile(
+        mergedProfile
+      );
+
+      setDraft(
+        mergedProfile
+      );
+    } catch (error) {
+      console.warn(
+        '[ManeLine profile] Could not load profile:',
+        error
+      );
+
+      setProfile(
+        defaultProfile
+      );
+
+      setDraft(
+        defaultProfile
+      );
     }
   }
 
-  async function saveProfile(nextProfile: HairProfile) {
-    setProfile(nextProfile);
-    setDraft(nextProfile);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextProfile));
+  /* =======================================================
+     SAVE
+     ======================================================= */
+
+  async function saveProfile(
+    nextProfile:
+      HairProfile
+  ) {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(
+          nextProfile
+        )
+      );
+
+      setProfile(
+        nextProfile
+      );
+
+      setDraft(
+        nextProfile
+      );
+    } catch (error) {
+      console.warn(
+        '[ManeLine profile] Could not save profile:',
+        error
+      );
+
+      Alert.alert(
+        'Could not save profile',
+        'Please try again.'
+      );
+    }
   }
 
   function openEditor() {
     setDraft(profile);
+
     setIsEditing(true);
   }
 
   async function handleSaveDraft() {
-    await saveProfile(draft);
+    await saveProfile(
+      draft
+    );
+
     setIsEditing(false);
   }
 
-  function toggleGoal(goal: string) {
-    setDraft((current) => {
-      const alreadySelected = current.goals.includes(goal);
+  /* =======================================================
+     GOALS
+     ======================================================= */
 
-      return {
-        ...current,
-        goals: alreadySelected
-          ? current.goals.filter((item) => item !== goal)
-          : [...current.goals, goal],
-      };
-    });
-  }
-
-  function updateRoutineStep(
-    stepId: string,
-    field: keyof Omit<RoutineStep, 'id'>,
-    value: string
+  function toggleGoal(
+    goal: string
   ) {
-    setDraft((current) => ({
-      ...current,
-      routineSteps: current.routineSteps.map((step) =>
-        step.id === stepId ? { ...step, [field]: value } : step
-      ),
-    }));
+    setDraft(
+      (current) => {
+        const selected =
+          current.goals.includes(
+            goal
+          );
+
+        return {
+          ...current,
+
+          goals: selected
+            ? current.goals.filter(
+                (item) =>
+                  item !== goal
+              )
+            : [
+                ...current.goals,
+                goal,
+              ],
+        };
+      }
+    );
   }
+
+  /* =======================================================
+     RESET
+     ======================================================= */
 
   function resetDemoProfile() {
     Alert.alert(
       'Reset profile?',
-      'This will reset the demo profile back to the default ManeLine profile.',
+      'This will reset your ManeLine profile.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+
         {
           text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            await saveProfile(defaultProfile);
-          },
+          style:
+            'destructive',
+
+          onPress:
+            async () => {
+              await saveProfile(
+                defaultProfile
+              );
+            },
         },
       ]
     );
   }
 
-  function goTo(path: string) {
-    router.push(path as never);
-  }
+  /* =======================================================
+     COMPATIBILITY STRENGTH
+     ======================================================= */
 
-  const profileCompletion = useMemo(() => {
-    const fields = [
-      profile.displayName,
-      profile.email,
-      profile.hairType,
-      profile.porosity,
-      profile.density,
-      profile.scalp,
-      profile.routineFocus,
-    ];
+  const compatibilityStrength =
+    useMemo(() => {
+      const requiredFields = [
+        profile.hairType,
+        profile.porosity,
+        profile.texture,
+        profile.density,
+        profile.scalp,
+        profile
+          .chemicalHistory,
+      ];
 
-    const completedFields = fields.filter(Boolean).length;
-    const hasGoals = profile.goals.length > 0 ? 1 : 0;
-    const hasRoutine = profile.routineSteps.length > 0 ? 1 : 0;
+      let completed =
+        requiredFields.filter(
+          Boolean
+        ).length;
 
-    return Math.round(((completedFields + hasGoals + hasRoutine) / 9) * 100);
-  }, [profile]);
+      let total =
+        requiredFields.length;
 
-  const actionItems: ActionItem[] = [
-    {
-      title: 'Edit Avatar',
-      subtitle: 'Update your ManeLine look',
-      icon: 'person-circle-outline',
-      onPress: () => goTo('/editAvatar'),
-    },
-    {
-      title: 'Hair Profile Setup',
-      subtitle: 'Retake profile questions',
-      icon: 'sparkles-outline',
-      onPress: () => goTo('/hairProfileSetup'),
-    },
-    {
-      title: 'Scan History',
-      subtitle: 'View products you scanned',
-      icon: 'time-outline',
-      onPress: () => goTo('/(tabs)/results'),
-    },
-    {
-      title: 'Product Library',
-      subtitle: 'Shop routine-matched products',
-      icon: 'bag-outline',
-      onPress: () => goTo('/(tabs)/search'),
-    },
-    {
-      title: 'Review Scan',
-      subtitle: 'Demo the review flow',
-      icon: 'document-text-outline',
-      onPress: () => goTo('/review-scan'),
-    },
-    {
-      title: 'Login Screen',
-      subtitle: 'Preview auth flow',
-      icon: 'log-in-outline',
-      onPress: () => goTo('/login'),
-    },
-  ];
-const insets = useSafeAreaInsets();
+      /*
+       * Goals are an important profile dimension.
+       */
+      total += 1;
+
+      if (
+        profile.goals.length >
+        0
+      ) {
+        completed += 1;
+      }
+
+      /*
+       * Optional dimensions only count toward
+       * completion if the user turns them on.
+       */
+
+      if (
+        profile.hairstyleEnabled
+      ) {
+        total += 1;
+
+        if (
+          profile.hairstyle
+        ) {
+          completed += 1;
+        }
+      }
+
+      if (
+        profile
+          .scalpConditionEnabled
+      ) {
+        total += 1;
+
+        if (
+          profile.scalpCondition
+        ) {
+          completed += 1;
+        }
+      }
+
+      if (
+        profile
+          .headCoveringEnabled
+      ) {
+        total += 1;
+
+        if (
+          profile.headCovering
+        ) {
+          completed += 1;
+        }
+      }
+
+      return Math.round(
+        (completed / total) *
+          100
+      );
+    }, [profile]);
+
+  /* =======================================================
+     UI
+     ======================================================= */
+
   return (
-    <View style={styles.screen}>
+    <View
+      style={styles.screen}
+    >
       <ScrollView
-        showsVerticalScrollIndicator={false}
-contentContainerStyle={[
-  styles.content,
-  {
-    paddingTop: insets.top + PAGE_TOP_PADDING,
-    paddingBottom: TAB_BOTTOM_PADDING,
-  },
-]}      >
-        <View style={styles.headerCard}>
-          <View style={styles.headerTop}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {profile.displayName.slice(0, 1).toUpperCase()}
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop:
+              insets.top +
+              PAGE_TOP_PADDING,
+
+            paddingBottom:
+              TAB_BOTTOM_PADDING,
+          },
+        ]}
+      >
+        {/* PROFILE HEADER */}
+
+        <View
+          style={
+            styles.profileHeader
+          }
+        >
+          <View
+            style={
+              styles.headerTop
+            }
+          >
+            <View
+              style={styles.avatar}
+            >
+              <Text
+                style={
+                  styles.avatarText
+                }
+              >
+                {profile.displayName
+                  .slice(0, 1)
+                  .toUpperCase()}
               </Text>
             </View>
 
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.eyebrow}>Your ManeLine profile</Text>
-              <Text style={styles.name}>{profile.displayName}</Text>
-              <Text style={styles.email}>{profile.email}</Text>
+            <View
+              style={
+                styles.headerTextWrap
+              }
+            >
+              <Text
+                style={
+                  styles.eyebrow
+                }
+              >
+                YOUR PROFILE
+              </Text>
+
+              <Text
+                style={styles.name}
+              >
+                {
+                  profile.displayName
+                }
+              </Text>
+
+              <Text
+                style={styles.email}
+              >
+                {profile.email}
+              </Text>
             </View>
 
-            <Pressable style={styles.editButton} onPress={openEditor}>
-              <Ionicons name="create-outline" size={20} color="#111827" />
+            <Pressable
+              style={
+                styles.editButton
+              }
+              onPress={
+                openEditor
+              }
+            >
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={
+                  COLORS.oxfordBlue
+                }
+              />
             </Pressable>
           </View>
 
-          <View style={styles.completionWrap}>
-            <View style={styles.completionTop}>
-              <Text style={styles.completionText}>Profile strength</Text>
-              <Text style={styles.completionPercent}>{profileCompletion}%</Text>
+          {/* PROFILE STRENGTH */}
+
+          <View
+            style={
+              styles.strengthCard
+            }
+          >
+            <View
+              style={
+                styles.strengthTop
+              }
+            >
+              <View
+                style={{
+                  flex: 1,
+                }}
+              >
+                <Text
+                  style={
+                    styles.strengthLabel
+                  }
+                >
+                  Compatibility
+                  strength
+                </Text>
+
+                <Text
+                  style={
+                    styles.strengthSubLabel
+                  }
+                >
+                  How much ManeLine
+                  knows about your
+                  hair
+                </Text>
+              </View>
+
+              <Text
+                style={
+                  styles.strengthPercent
+                }
+              >
+                {
+                  compatibilityStrength
+                }
+                %
+              </Text>
             </View>
 
-            <View style={styles.progressTrack}>
+            <View
+              style={
+                styles.progressTrack
+              }
+            >
               <View
                 style={[
                   styles.progressFill,
-                  { width: `${profileCompletion}%` },
+                  {
+                    width:
+                      `${compatibilityStrength}%`,
+                  },
                 ]}
               />
             </View>
 
-            <Text style={styles.completionHint}>
-              The more complete your profile is, the better your scan results
-              and product matches become.
+            <Text
+              style={
+                styles.strengthHint
+              }
+            >
+              A detailed profile
+              helps ManeLine make
+              more relevant product,
+              ingredient and routine
+              recommendations.
             </Text>
           </View>
         </View>
 
-        <View style={styles.statsRow}>
-          <MiniStat
-            icon="scan-outline"
-            label="Scans"
-            value="12"
-            helper="saved"
-          />
-          <MiniStat
-            icon="heart-outline"
-            label="Saved"
-            value="8"
-            helper="products"
-          />
-          <MiniStat
-            icon="sparkles-outline"
-            label="Routine"
-            value={`${profile.routineCompatibilityScore}%`}
-            helper="match"
-          />
-        </View>
+        {/* HAIR PROFILE */}
 
         <SectionTitle
-          title="Hair identity"
-          subtitle="This powers your scan results and product recommendations."
+          kicker="YOUR HAIR"
+          title="Hair profile"
+          subtitle="These details shape your ingredient analysis and product recommendations."
         />
 
-        <View style={styles.identityGrid}>
+        <View
+          style={
+            styles.identityGrid
+          }
+        >
           <ProfileChip
             icon="flower-outline"
             label="Hair type"
-            value={profile.hairType}
+            value={
+              profile.hairType
+            }
+            info="Hair type describes your natural curl or wave pattern, ranging from straight (1A) to tightly coiled (4C)."
           />
+
           <ProfileChip
             icon="water-outline"
             label="Porosity"
-            value={profile.porosity}
+            value={
+              profile.porosity
+            }
+            info="Porosity describes how easily your hair absorbs and retains moisture."
           />
+
+          <ProfileChip
+            icon="sparkles-outline"
+            label="Texture"
+            value={
+              profile.texture
+            }
+            info="Texture describes the thickness of each individual strand: fine, medium, or coarse."
+          />
+
           <ProfileChip
             icon="layers-outline"
             label="Density"
-            value={profile.density}
+            value={
+              profile.density
+            }
+            info="Density describes how much hair you have on your scalp overall."
           />
+
           <ProfileChip
             icon="leaf-outline"
             label="Scalp"
-            value={profile.scalp}
+            value={
+              profile.scalp
+            }
+            info="Your general scalp profile describes characteristics such as dryness, oiliness, sensitivity, or flaking."
           />
+
+          <ProfileChip
+            icon="color-wand-outline"
+            label="Hair history"
+            value={
+              profile
+                .chemicalHistory
+            }
+            info="Hair history considers coloring, relaxing, heat damage, transitioning, or untreated hair."
+          />
+
+          {/* ONLY SHOW WHEN ENABLED */}
+
+          {profile.hairstyleEnabled &&
+          profile.hairstyle ? (
+            <ProfileChip
+              icon="cut-outline"
+              label="Hairstyle"
+              value={
+                profile.hairstyle
+              }
+              info="Your current hairstyle helps ManeLine consider scalp access, buildup and how products fit your current routine."
+            />
+          ) : null}
+
+          {profile
+            .scalpConditionEnabled &&
+          profile.scalpCondition ? (
+            <ProfileChip
+              icon="medical-outline"
+              label="Scalp condition"
+              value={
+                profile
+                  .scalpCondition
+              }
+              info="This optional information helps ManeLine provide more cautious product guidance. ManeLine does not diagnose or treat scalp conditions."
+            />
+          ) : null}
+
+          {profile
+            .headCoveringEnabled &&
+          profile.headCovering ? (
+            <ProfileChip
+              icon="layers-outline"
+              label="Head covering"
+              value={
+                profile
+                  .headCovering
+              }
+              info="Regular head covering can affect how often your scalp is accessible and how products fit into your routine."
+            />
+          ) : null}
         </View>
+
+        {/* GOALS */}
 
         <SectionTitle
+          kicker="PERSONALIZATION"
           title="Hair goals"
-          subtitle="What your routine is built around."
+          subtitle="ManeLine uses your goals when determining whether a product fits your needs."
         />
 
-        <View style={styles.goalWrap}>
-          {profile.goals.map((goal) => (
-            <View key={goal} style={styles.goalChip}>
-              <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-              <Text style={styles.goalText}>{goal}</Text>
-            </View>
-          ))}
+        <View
+          style={styles.goalWrap}
+        >
+          {profile.goals.map(
+            (goal) => (
+              <View
+                key={goal}
+                style={
+                  styles.goalChip
+                }
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={14}
+                  color={
+                    COLORS.oxfordBlue
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.goalText
+                  }
+                >
+                  {goal}
+                </Text>
+              </View>
+            )
+          )}
         </View>
 
-        <View style={styles.routineCard}>
-          <View style={styles.routineIcon}>
-            <Ionicons name="calendar-outline" size={24} color="#FFFFFF" />
-          </View>
+        {/* ROUTINE */}
 
-          <View style={{ flex: 1 }}>
-            <Text style={styles.routineTitle}>Routine focus</Text>
-            <Text style={styles.routineText}>{profile.routineFocus}</Text>
+        <SectionTitle
+          kicker="YOUR ROUTINE"
+          title="Routine"
+          subtitle="Your routine helps ManeLine understand how products fit together."
+        />
 
-            <Pressable onPress={() => router.push('/routine' as never)}>
-              <Text style={styles.editRoutineText}>Edit routine</Text>
-              </Pressable>
-          </View>
-        </View>
+        {/* ROUTINE COMPATIBILITY */}
 
-        <View style={styles.compatibilityCard}>
-          <View>
-            <Text style={styles.compatibilityLabel}>Routine compatibility</Text>
-            <Text style={styles.compatibilityScore}>
-              {profile.routineCompatibilityScore}%
+        <View
+          style={
+            styles.compatibilityCard
+          }
+        >
+          <View
+            style={
+              styles.compatibilityScoreWrap
+            }
+          >
+            <Text
+              style={
+                styles.compatibilityEyebrow
+              }
+            >
+              ROUTINE
+              COMPATIBILITY
+            </Text>
+
+            <Text
+              style={
+                styles.compatibilityScore
+              }
+            >
+              {
+                profile
+                  .routineCompatibilityScore
+              }
+              %
             </Text>
           </View>
 
-          <Text style={styles.compatibilityText}>
-            This score reflects how well your current routine supports your hair type,
-  porosity, scalp needs, and goals. It will become smarter as you scan more
-  products.
-          </Text>
-        </View>
-
-        <SectionTitle
-          title="My routine"
-          subtitle="The routine ManeLine uses to shape product matches and scan recommendations."
-        />
-
-        <View style={styles.routineList}>
-          {profile.routineSteps.map((step, index) => (
-            <View key={step.id} style={styles.routineStepCard}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>{index + 1}</Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.stepTitle}>{step.title}</Text>
-                <Text style={styles.stepFrequency}>{step.frequency}</Text>
-                <Text style={styles.stepProduct}>{step.productType}</Text>
-                <Text style={styles.stepNote}>{step.note}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.marketplaceCard}>
-          <View style={styles.marketplaceTop}>
-            <View>
-              <Text style={styles.marketplaceEyebrow}>Coming marketplace</Text>
-              <Text style={styles.marketplaceTitle}>Products picked for you</Text>
-            </View>
-
-            <View style={styles.marketplaceIcon}>
-              <Ionicons name="bag-handle-outline" size={24} color="#FFFFFF" />
-            </View>
-          </View>
-
-          <Text style={styles.marketplaceText}>
-            Your marketplace can use this profile, scan history, and routine to
-            recommend products that actually match your hair needs.
-          </Text>
-
-          <Pressable
-            style={styles.marketplaceButton}
-            onPress={() => goTo('/(tabs)/search')}
+          <View
+            style={
+              styles.compatibilityCopy
+            }
           >
-            <Text style={styles.marketplaceButtonText}>Explore product library</Text>
-            <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
-          </Pressable>
+            <Text
+              style={
+                styles.compatibilityTitle
+              }
+            >
+              Strong match
+            </Text>
+
+            <Text
+              style={
+                styles.compatibilityText
+              }
+            >
+              Your current
+              routine is aligned
+              with your saved
+              profile and goals.
+            </Text>
+          </View>
         </View>
+
+        {/* SETTINGS */}
 
         <SectionTitle
-          title="Demo shortcuts"
-          subtitle="Quick access while presenting the app."
+          kicker="PREFERENCES"
+          title="ManeLine settings"
+          subtitle="Choose how ManeLine supports your routine and product decisions."
         />
 
-        <View style={styles.actionGrid}>
-          {actionItems.map((item) => (
-            <Pressable
-              key={item.title}
-              style={styles.actionCard}
-              onPress={item.onPress}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons name={item.icon} size={22} color="#111827" />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionTitle}>{item.title}</Text>
-                <Text style={styles.actionSubtitle}>{item.subtitle}</Text>
-              </View>
-
-              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-            </Pressable>
-          ))}
-        </View>
-
-        <SectionTitle title="Settings" subtitle="Personalize the app experience." />
-
-        <View style={styles.settingsCard}>
+        <View
+          style={
+            styles.settingsCard
+          }
+        >
           <SettingRow
             icon="notifications-outline"
             title="Routine reminders"
-            subtitle="Get nudges for wash day, deep conditioning, and product use."
-            value={routineReminders}
-            onValueChange={setRoutineReminders}
+            subtitle="Reminders for wash day and routine tasks."
+            value={
+              routineReminders
+            }
+            onValueChange={
+              setRoutineReminders
+            }
           />
 
-          <View style={styles.divider} />
+          <View
+            style={styles.divider}
+          />
 
           <SettingRow
             icon="warning-outline"
             title="Ingredient alerts"
-            subtitle="Flag ingredients that may not fit your profile."
-            value={ingredientAlerts}
-            onValueChange={setIngredientAlerts}
+            subtitle="Highlight ingredients that may not fit your profile."
+            value={
+              ingredientAlerts
+            }
+            onValueChange={
+              setIngredientAlerts
+            }
           />
 
-          <View style={styles.divider} />
+          <View
+            style={styles.divider}
+          />
 
           <SettingRow
-            icon="bag-outline"
-            title="Marketplace personalization"
-            subtitle="Use your profile to improve product matches."
-            value={marketplacePersonalization}
-            onValueChange={setMarketplacePersonalization}
+            icon="sparkles-outline"
+            title="Personalized recommendations"
+            subtitle="Use your saved profile to improve recommendations."
+            value={
+              recommendationPersonalization
+            }
+            onValueChange={
+              setRecommendationPersonalization
+            }
           />
         </View>
 
-        <Pressable style={styles.resetButton} onPress={resetDemoProfile}>
-          <Ionicons name="refresh-outline" size={18} color="#B91C1C" />
-          <Text style={styles.resetText}>Reset demo profile</Text>
+        {/* SUPPORT */}
+
+        <SectionTitle
+          kicker="ACCOUNT"
+          title="Support & account"
+        />
+
+        <View
+          style={
+            styles.navigationCard
+          }
+        >
+          <NavigationRow
+            icon="help-circle-outline"
+            title="Help & FAQs"
+            onPress={() =>
+              Alert.alert(
+                'Help & FAQs',
+                'Help content will live here.'
+              )
+            }
+          />
+
+          <View
+            style={styles.divider}
+          />
+
+          <NavigationRow
+            icon="chatbubble-ellipses-outline"
+            title="Contact us"
+            onPress={() =>
+              Alert.alert(
+                'Contact ManeLine',
+                'Contact options will live here.'
+              )
+            }
+          />
+
+          <View
+            style={styles.divider}
+          />
+
+          <NavigationRow
+            icon="shield-checkmark-outline"
+            title="Privacy policy"
+            onPress={() =>
+              Alert.alert(
+                'Privacy policy',
+                'The ManeLine privacy policy will live here.'
+              )
+            }
+          />
+        </View>
+
+        {/* RESET */}
+
+        <Pressable
+          style={
+            styles.resetButton
+          }
+          onPress={
+            resetDemoProfile
+          }
+        >
+          <Ionicons
+            name="refresh-outline"
+            size={17}
+            color={
+              COLORS.danger
+            }
+          />
+
+          <Text
+            style={
+              styles.resetText
+            }
+          >
+            Reset profile
+          </Text>
         </Pressable>
       </ScrollView>
+
+      {/* EDIT MODAL */}
 
       <EditProfileModal
         visible={isEditing}
         draft={draft}
         setDraft={setDraft}
-        onClose={() => setIsEditing(false)}
-        onSave={handleSaveDraft}
-        toggleGoal={toggleGoal}
-        updateRoutineStep={updateRoutineStep}
+        onClose={() =>
+          setIsEditing(false)
+        }
+        onSave={
+          handleSaveDraft
+        }
+        toggleGoal={
+          toggleGoal
+        }
       />
     </View>
   );
 }
 
-function SectionTitle({
+/* =========================================================
+   EDIT PROFILE MODAL
+   ========================================================= */
+
+function EditProfileModal({
+  visible,
+  draft,
+  setDraft,
+  onClose,
+  onSave,
+  toggleGoal,
+}: {
+  visible: boolean;
+
+  draft: HairProfile;
+
+  setDraft: Dispatch<
+    SetStateAction<HairProfile>
+  >;
+
+  onClose: () => void;
+
+  onSave: () => void;
+
+  toggleGoal:
+    (goal: string) => void;
+}) {
+  const protectiveStyle =
+    draft.hairstyleEnabled &&
+    [
+      'Braids',
+      'Locs',
+      'Sew-in / Wig',
+    ].includes(
+      draft.hairstyle
+    );
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={
+        onClose
+      }
+    >
+      <View
+        style={
+          styles.modalOverlay
+        }
+      >
+        <View
+          style={
+            styles.modalCard
+          }
+        >
+          <View
+            style={
+              styles.modalHandle
+            }
+          />
+
+          <View
+            style={
+              styles.modalHeader
+            }
+          >
+            <View
+              style={{ flex: 1 }}
+            >
+              <Text
+                style={
+                  styles.modalTitle
+                }
+              >
+                Edit hair profile
+              </Text>
+
+              <Text
+                style={
+                  styles.modalSubtitle
+                }
+              >
+                Update the details
+                ManeLine uses to
+                personalize product
+                matches.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+            >
+              <Ionicons
+                name="close"
+                size={25}
+                color={
+                  COLORS.oxfordBlue
+                }
+              />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={
+              false
+            }
+          >
+            {/* NAME */}
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
+              Name
+            </Text>
+
+            <TextInput
+              value={
+                draft.displayName
+              }
+              onChangeText={(
+                text
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    displayName:
+                      text,
+                  })
+                )
+              }
+              placeholder="Your name"
+              style={styles.input}
+            />
+
+            {/* EMAIL */}
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
+              Email
+            </Text>
+
+            <TextInput
+              value={draft.email}
+              onChangeText={(
+                text
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    email: text,
+                  })
+                )
+              }
+              placeholder="Your email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+            />
+
+            {/* CORE PROFILE */}
+
+            <OptionGroup
+              label="Hair type"
+              options={hairTypes}
+              selected={
+                draft.hairType
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    hairType:
+                      value,
+                  })
+                )
+              }
+            />
+
+            <OptionGroup
+              label="Porosity"
+              options={
+                porosityOptions
+              }
+              selected={
+                draft.porosity
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    porosity:
+                      value,
+                  })
+                )
+              }
+            />
+
+            <OptionGroup
+              label="Hair texture"
+              options={
+                textureOptions
+              }
+              selected={
+                draft.texture
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    texture:
+                      value,
+                  })
+                )
+              }
+            />
+
+            <OptionGroup
+              label="Hair density"
+              options={
+                densityOptions
+              }
+              selected={
+                draft.density
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    density:
+                      value,
+                  })
+                )
+              }
+            />
+
+            <OptionGroup
+              label="Scalp type"
+              options={
+                scalpOptions
+              }
+              selected={
+                draft.scalp
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    scalp:
+                      value,
+                  })
+                )
+              }
+            />
+
+            <OptionGroup
+              label="Chemical history"
+              options={
+                chemicalHistoryOptions
+              }
+              selected={
+                draft
+                  .chemicalHistory
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    chemicalHistory:
+                      value,
+                  })
+                )
+              }
+            />
+
+            {/* OPTIONAL PROFILE CONTEXT */}
+
+            <View
+              style={
+                styles.optionalIntro
+              }
+            >
+              <Text
+                style={
+                  styles.optionalTitle
+                }
+              >
+                Optional profile
+                details
+              </Text>
+
+              <Text
+                style={
+                  styles.optionalText
+                }
+              >
+                Turn these on only
+                when they apply to
+                you. ManeLine will
+                use them in product
+                recommendations and
+                routine planning.
+              </Text>
+            </View>
+
+            {/* HAIRSTYLE */}
+
+            <ToggleDropdownSection
+              title="Current hairstyle"
+              description="Use this when you are currently wearing a style that changes scalp access or product use."
+              enabled={
+                draft
+                  .hairstyleEnabled
+              }
+              onToggle={(
+                enabled
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+
+                    hairstyleEnabled:
+                      enabled,
+
+                    hairstyle:
+                      enabled &&
+                      !current.hairstyle
+                        ? hairstyleOptions[0]
+                        : current.hairstyle,
+                  })
+                )
+              }
+              dropdownLabel="Hairstyle"
+              value={
+                draft.hairstyle
+              }
+              options={
+                hairstyleOptions
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    hairstyle:
+                      value,
+                  })
+                )
+              }
+            />
+
+            {/* INSTALL / REMOVAL DATES */}
+
+            {protectiveStyle ? (
+              <View
+                style={
+                  styles.dateFields
+                }
+              >
+                <Text
+                  style={
+                    styles.inputLabel
+                  }
+                >
+                  Style install
+                  date
+                </Text>
+
+                <TextInput
+                  value={
+                    draft
+                      .styleInstallDate
+                  }
+                  onChangeText={(
+                    text
+                  ) =>
+                    setDraft(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+
+                        styleInstallDate:
+                          text,
+                      })
+                    )
+                  }
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#9CA3AF"
+                  style={
+                    styles.input
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.inputLabel
+                  }
+                >
+                  Planned removal
+                  date
+                </Text>
+
+                <TextInput
+                  value={
+                    draft
+                      .styleRemovalDate
+                  }
+                  onChangeText={(
+                    text
+                  ) =>
+                    setDraft(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+
+                        styleRemovalDate:
+                          text,
+                      })
+                    )
+                  }
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#9CA3AF"
+                  style={
+                    styles.input
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.dateHelp
+                  }
+                >
+                  These dates are
+                  used by your
+                  Routine calendar.
+                </Text>
+              </View>
+            ) : null}
+
+            {/* SCALP CONDITION */}
+
+            <ToggleDropdownSection
+              title="Scalp medical condition"
+              description="Optional. Turn this on if you have a known scalp condition you want ManeLine to consider."
+              enabled={
+                draft
+                  .scalpConditionEnabled
+              }
+              onToggle={(
+                enabled
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+
+                    scalpConditionEnabled:
+                      enabled,
+
+                    scalpCondition:
+                      enabled &&
+                      !current
+                        .scalpCondition
+                        ? scalpConditionOptions[0]
+                        : current
+                            .scalpCondition,
+                  })
+                )
+              }
+              dropdownLabel="Scalp condition"
+              value={
+                draft
+                  .scalpCondition
+              }
+              options={
+                scalpConditionOptions
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+
+                    scalpCondition:
+                      value,
+                  })
+                )
+              }
+            />
+
+            {/* HEAD COVERING */}
+
+            <ToggleDropdownSection
+              title="Head covering"
+              description="Turn this on if you regularly wear a head covering that should be considered in your routine."
+              enabled={
+                draft
+                  .headCoveringEnabled
+              }
+              onToggle={(
+                enabled
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+
+                    headCoveringEnabled:
+                      enabled,
+
+                    headCovering:
+                      enabled &&
+                      !current
+                        .headCovering
+                        ? headCoveringOptions[0]
+                        : current
+                            .headCovering,
+                  })
+                )
+              }
+              dropdownLabel="Head covering"
+              value={
+                draft
+                  .headCovering
+              }
+              options={
+                headCoveringOptions
+              }
+              onSelect={(
+                value
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+
+                    headCovering:
+                      value,
+                  })
+                )
+              }
+            />
+
+            {/* GOALS */}
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
+              Hair goals
+            </Text>
+
+            <View
+              style={
+                styles.modalGoalWrap
+              }
+            >
+              {goalOptions.map(
+                (goal) => {
+                  const selected =
+                    draft.goals.includes(
+                      goal
+                    );
+
+                  return (
+                    <Pressable
+                      key={goal}
+                      onPress={() =>
+                        toggleGoal(
+                          goal
+                        )
+                      }
+                      style={[
+                        styles.modalGoalChip,
+
+                        selected &&
+                          styles.modalGoalChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modalGoalText,
+
+                          selected &&
+                            styles.modalGoalTextActive,
+                        ]}
+                      >
+                        {goal}
+                      </Text>
+                    </Pressable>
+                  );
+                }
+              )}
+            </View>
+
+            {/* ALLERGIES */}
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
+              Allergies or
+              sensitivities
+            </Text>
+
+            <TextInput
+              value={
+                draft.allergies
+              }
+              onChangeText={(
+                text
+              ) =>
+                setDraft(
+                  (current) => ({
+                    ...current,
+                    allergies:
+                      text,
+                  })
+                )
+              }
+              placeholder="Optional"
+              multiline
+              style={[
+                styles.input,
+                styles.textArea,
+              ]}
+            />
+
+            {/* SAVE */}
+
+            <Pressable
+              style={
+                styles.saveButton
+              }
+              onPress={onSave}
+            >
+              <Text
+                style={
+                  styles.saveButtonText
+                }
+              >
+                Save profile
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   TOGGLE + DROPDOWN SECTION
+   ========================================================= */
+
+function ToggleDropdownSection({
   title,
-  subtitle,
+  description,
+  enabled,
+  onToggle,
+  dropdownLabel,
+  value,
+  options,
+  onSelect,
 }: {
   title: string;
-  subtitle?: string;
+
+  description: string;
+
+  enabled: boolean;
+
+  onToggle:
+    (enabled: boolean) =>
+      void;
+
+  dropdownLabel: string;
+
+  value: string;
+
+  options: string[];
+
+  onSelect:
+    (value: string) =>
+      void;
 }) {
   return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {!!subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+    <View
+      style={[
+        styles.toggleCard,
+
+        enabled &&
+          styles.toggleCardActive,
+      ]}
+    >
+      <View
+        style={
+          styles.toggleHeader
+        }
+      >
+        <View
+          style={
+            styles.toggleCopy
+          }
+        >
+          <Text
+            style={
+              styles.toggleTitle
+            }
+          >
+            {title}
+          </Text>
+
+          <Text
+            style={
+              styles.toggleDescription
+            }
+          >
+            {description}
+          </Text>
+        </View>
+
+        <Switch
+          value={enabled}
+          onValueChange={
+            onToggle
+          }
+          trackColor={{
+            false: '#DDDCD4',
+            true:
+              COLORS.lightBlue,
+          }}
+          thumbColor={
+            enabled
+              ? COLORS.oxfordBlue
+              : COLORS.white
+          }
+        />
+      </View>
+
+      {enabled ? (
+        <View
+          style={
+            styles.toggleBody
+          }
+        >
+          <DropdownField
+            label={
+              dropdownLabel
+            }
+            value={value}
+            options={options}
+            onSelect={
+              onSelect
+            }
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function MiniStat({
-  icon,
+/* =========================================================
+   DROPDOWN
+   ========================================================= */
+
+function DropdownField({
   label,
   value,
-  helper,
+  options,
+  onSelect,
 }: {
-  icon: IconName;
   label: string;
+
   value: string;
-  helper: string;
+
+  options: string[];
+
+  onSelect:
+    (value: string) =>
+      void;
 }) {
+  const [
+    open,
+    setOpen,
+  ] =
+    useState(false);
+
   return (
-    <View style={styles.statCard}>
-      <Ionicons name={icon} size={21} color="#D97706" />
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statHelper}>{helper}</Text>
+    <View>
+      <Text
+        style={
+          styles.dropdownLabel
+        }
+      >
+        {label}
+      </Text>
+
+      <Pressable
+        style={
+          styles.dropdownField
+        }
+        onPress={() =>
+          setOpen(
+            (current) =>
+              !current
+          )
+        }
+      >
+        <Text
+          style={
+            styles.dropdownFieldText
+          }
+        >
+          {value ||
+            `Choose ${label.toLowerCase()}`}
+        </Text>
+
+        <Ionicons
+          name={
+            open
+              ? 'chevron-up'
+              : 'chevron-down'
+          }
+          size={18}
+          color={
+            COLORS.oxfordBlue
+          }
+        />
+      </Pressable>
+
+      {open ? (
+        <View
+          style={
+            styles.dropdownMenu
+          }
+        >
+          {options.map(
+            (option) => {
+              const selected =
+                value === option;
+
+              return (
+                <Pressable
+                  key={option}
+                  style={[
+                    styles.dropdownOption,
+
+                    selected &&
+                      styles.dropdownOptionSelected,
+                  ]}
+                  onPress={() => {
+                    onSelect(
+                      option
+                    );
+
+                    setOpen(
+                      false
+                    );
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownOptionText,
+
+                      selected &&
+                        styles.dropdownOptionTextSelected,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark"
+                      size={18}
+                      color={
+                        COLORS.green
+                      }
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            }
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
+
+/* =========================================================
+   SECTION TITLE
+   ========================================================= */
+
+function SectionTitle({
+  kicker,
+  title,
+  subtitle,
+}: {
+  kicker?: string;
+
+  title: string;
+
+  subtitle?: string;
+}) {
+  return (
+    <View
+      style={
+        styles.sectionHeader
+      }
+    >
+      {kicker ? (
+        <Text
+          style={
+            styles.sectionKicker
+          }
+        >
+          {kicker}
+        </Text>
+      ) : null}
+
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        {title}
+      </Text>
+
+      {subtitle ? (
+        <Text
+          style={
+            styles.sectionSubtitle
+          }
+        >
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/* =========================================================
+   PROFILE CHIP
+   ========================================================= */
 
 function ProfileChip({
   icon,
   label,
   value,
+  info,
 }: {
   icon: IconName;
+
   label: string;
+
   value: string;
+
+  info: string;
 }) {
+  const [
+    showInfo,
+    setShowInfo,
+  ] =
+    useState(false);
+
   return (
-    <View style={styles.profileChip}>
-      <View style={styles.profileChipIcon}>
-        <Ionicons name={icon} size={20} color="#111827" />
+    <View
+      style={[
+        styles.profileChip,
+
+        showInfo &&
+          styles.profileChipExpanded,
+      ]}
+    >
+      <View
+        style={
+          styles.profileChipTop
+        }
+      >
+        <View
+          style={
+            styles.profileChipIcon
+          }
+        >
+          <Ionicons
+            name={icon}
+            size={18}
+            color={
+              COLORS.oxfordBlue
+            }
+          />
+        </View>
+
+        <Pressable
+          style={
+            styles.infoButton
+          }
+          onPress={() =>
+            setShowInfo(
+              (current) =>
+                !current
+            )
+          }
+          hitSlop={8}
+        >
+          <Ionicons
+            name={
+              showInfo
+                ? 'close-circle-outline'
+                : 'information-circle-outline'
+            }
+            size={19}
+            color={
+              COLORS.green
+            }
+          />
+        </Pressable>
       </View>
 
-      <Text style={styles.profileChipLabel}>{label}</Text>
-      <Text style={styles.profileChipValue}>{value}</Text>
+      <Text
+        style={
+          styles.profileChipLabel
+        }
+      >
+        {label}
+      </Text>
+
+      <Text
+        style={
+          styles.profileChipValue
+        }
+        numberOfLines={2}
+      >
+        {value}
+      </Text>
+
+      {showInfo ? (
+        <View
+          style={
+            styles.profileInfoBubble
+          }
+        >
+          <Text
+            style={
+              styles.profileInfoText
+            }
+          >
+            {info}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
+
+/* =========================================================
+   OPTION GROUP
+   ========================================================= */
+
+function OptionGroup({
+  label,
+  options,
+  selected,
+  onSelect,
+}: {
+  label: string;
+
+  options: string[];
+
+  selected: string;
+
+  onSelect:
+    (value: string) =>
+      void;
+}) {
+  return (
+    <View>
+      <Text
+        style={
+          styles.inputLabel
+        }
+      >
+        {label}
+      </Text>
+
+      <View
+        style={
+          styles.optionWrap
+        }
+      >
+        {options.map(
+          (option) => {
+            const active =
+              selected ===
+              option;
+
+            return (
+              <Pressable
+                key={option}
+                onPress={() =>
+                  onSelect(
+                    option
+                  )
+                }
+                style={[
+                  styles.optionChip,
+
+                  active &&
+                    styles.optionChipActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.optionText,
+
+                    active &&
+                      styles.optionTextActive,
+                  ]}
+                >
+                  {option}
+                </Text>
+              </Pressable>
+            );
+          }
+        )}
+      </View>
+    </View>
+  );
+}
+
+/* =========================================================
+   SETTING ROW
+   ========================================================= */
 
 function SettingRow({
   icon,
@@ -621,875 +2463,1265 @@ function SettingRow({
   onValueChange,
 }: {
   icon: IconName;
+
   title: string;
+
   subtitle: string;
+
   value: boolean;
-  onValueChange: (value: boolean) => void;
+
+  onValueChange:
+    (value: boolean) =>
+      void;
 }) {
   return (
-    <View style={styles.settingRow}>
-      <View style={styles.settingIcon}>
-        <Ionicons name={icon} size={21} color="#111827" />
+    <View
+      style={
+        styles.settingRow
+      }
+    >
+      <View
+        style={
+          styles.settingIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={
+            COLORS.oxfordBlue
+          }
+        />
       </View>
 
-      <View style={{ flex: 1 }}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        <Text style={styles.settingSubtitle}>{subtitle}</Text>
+      <View
+        style={{ flex: 1 }}
+      >
+        <Text
+          style={
+            styles.settingTitle
+          }
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={
+            styles.settingSubtitle
+          }
+        >
+          {subtitle}
+        </Text>
       </View>
 
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch
+        value={value}
+        onValueChange={
+          onValueChange
+        }
+        trackColor={{
+          false: '#DDDCD4',
+          true:
+            COLORS.lightBlue,
+        }}
+        thumbColor={
+          value
+            ? COLORS.oxfordBlue
+            : COLORS.white
+        }
+      />
     </View>
   );
 }
 
-function EditProfileModal({
-  visible,
-  draft,
-  setDraft,
-  onClose,
-  onSave,
-  toggleGoal,
-  updateRoutineStep,
+/* =========================================================
+   NAVIGATION ROW
+   ========================================================= */
+
+function NavigationRow({
+  icon,
+  title,
+  onPress,
 }: {
-  visible: boolean;
-  draft: HairProfile;
-  setDraft: React.Dispatch<React.SetStateAction<HairProfile>>;
-  onClose: () => void;
-  onSave: () => void;
-  toggleGoal: (goal: string) => void;
-  updateRoutineStep: (
-    stepId: string,
-    field: keyof Omit<RoutineStep, 'id'>,
-    value: string
-  ) => void;
+  icon: IconName;
+
+  title: string;
+
+  onPress: () => void;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHandle} />
-
-          <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>Edit hair profile</Text>
-              <Text style={styles.modalSubtitle}>
-                Update the details that shape your product matches.
-              </Text>
-            </View>
-
-            <Pressable onPress={onClose} hitSlop={10}>
-              <Ionicons name="close" size={26} color="#111827" />
-            </Pressable>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={styles.inputLabel}>Name</Text>
-            <TextInput
-              value={draft.displayName}
-              onChangeText={(text) =>
-                setDraft((current) => ({ ...current, displayName: text }))
-              }
-              placeholder="Your name"
-              style={styles.input}
-            />
-
-            <Text style={styles.inputLabel}>Email</Text>
-            <TextInput
-              value={draft.email}
-              onChangeText={(text) =>
-                setDraft((current) => ({ ...current, email: text }))
-              }
-              placeholder="Your email"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={styles.input}
-            />
-
-            <OptionGroup
-              label="Hair type"
-              options={hairTypes}
-              selected={draft.hairType}
-              onSelect={(value) =>
-                setDraft((current) => ({ ...current, hairType: value }))
-              }
-            />
-
-            <OptionGroup
-              label="Porosity"
-              options={porosityOptions}
-              selected={draft.porosity}
-              onSelect={(value) =>
-                setDraft((current) => ({ ...current, porosity: value }))
-              }
-            />
-
-            <OptionGroup
-              label="Density"
-              options={densityOptions}
-              selected={draft.density}
-              onSelect={(value) =>
-                setDraft((current) => ({ ...current, density: value }))
-              }
-            />
-
-            <OptionGroup
-              label="Scalp"
-              options={scalpOptions}
-              selected={draft.scalp}
-              onSelect={(value) =>
-                setDraft((current) => ({ ...current, scalp: value }))
-              }
-            />
-
-            <Text style={styles.inputLabel}>Hair goals</Text>
-            <View style={styles.modalGoalWrap}>
-              {goalOptions.map((goal) => {
-                const isSelected = draft.goals.includes(goal);
-
-                return (
-                  <Pressable
-                    key={goal}
-                    onPress={() => toggleGoal(goal)}
-                    style={[
-                      styles.modalGoalChip,
-                      isSelected && styles.modalGoalChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.modalGoalText,
-                        isSelected && styles.modalGoalTextActive,
-                      ]}
-                    >
-                      {goal}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={styles.inputLabel}>Routine focus</Text>
-            <TextInput
-              value={draft.routineFocus}
-              onChangeText={(text) =>
-                setDraft((current) => ({ ...current, routineFocus: text }))
-              }
-              placeholder="Describe your current routine focus"
-              multiline
-              style={[styles.input, styles.textArea]}
-            />
-
-            <Text style={styles.inputLabel}>Routine compatibility score</Text>
-            <TextInput
-              value={String(draft.routineCompatibilityScore)}
-              onChangeText={(text) => {
-                const numericValue = Number(text.replace(/[^0-9]/g, ''));
-                const safeValue = Math.max(0, Math.min(100, numericValue || 0));
-
-                setDraft((current) => ({
-                  ...current,
-                  routineCompatibilityScore: safeValue,
-                }));
-              }}
-              keyboardType="number-pad"
-              placeholder="0-100"
-              style={styles.input}
-            />
-
-            <Text style={styles.inputLabel}>Full routine</Text>
-
-            {draft.routineSteps.map((step, index) => (
-              <View key={step.id} style={styles.editRoutineCard}>
-                <Text style={styles.editRoutineTitle}>
-                  Step {index + 1}: {step.title}
-                </Text>
-
-                <Text style={styles.smallInputLabel}>Step name</Text>
-                <TextInput
-                  value={step.title}
-                  onChangeText={(text) =>
-                    updateRoutineStep(step.id, 'title', text)
-                  }
-                  style={styles.input}
-                />
-
-                <Text style={styles.smallInputLabel}>Frequency</Text>
-                <TextInput
-                  value={step.frequency}
-                  onChangeText={(text) =>
-                    updateRoutineStep(step.id, 'frequency', text)
-                  }
-                  style={styles.input}
-                />
-
-                <Text style={styles.smallInputLabel}>Product type</Text>
-                <TextInput
-                  value={step.productType}
-                  onChangeText={(text) =>
-                    updateRoutineStep(step.id, 'productType', text)
-                  }
-                  multiline
-                  style={[styles.input, styles.smallTextArea]}
-                />
-
-                <Text style={styles.smallInputLabel}>Routine note</Text>
-                <TextInput
-                  value={step.note}
-                  onChangeText={(text) =>
-                    updateRoutineStep(step.id, 'note', text)
-                  }
-                  multiline
-                  style={[styles.input, styles.smallTextArea]}
-                />
-              </View>
-            ))}
-
-            <Text style={styles.inputLabel}>Allergies or sensitivities</Text>
-            <TextInput
-              value={draft.allergies}
-              onChangeText={(text) =>
-                setDraft((current) => ({ ...current, allergies: text }))
-              }
-              placeholder="Optional"
-              multiline
-              style={[styles.input, styles.textArea]}
-            />
-
-            <Pressable style={styles.saveButton} onPress={onSave}>
-              <Text style={styles.saveButtonText}>Save profile</Text>
-            </Pressable>
-          </ScrollView>
-        </View>
+    <Pressable
+      style={
+        styles.navigationRow
+      }
+      onPress={onPress}
+    >
+      <View
+        style={
+          styles.settingIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={
+            COLORS.oxfordBlue
+          }
+        />
       </View>
-    </Modal>
+
+      <Text
+        style={
+          styles.navigationTitle
+        }
+      >
+        {title}
+      </Text>
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={
+          COLORS.mutedText
+        }
+      />
+    </Pressable>
   );
 }
 
-function OptionGroup({
-  label,
-  options,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  options: string[];
-  selected: string;
-  onSelect: (value: string) => void;
-}) {
-  return (
-    <View>
-      <Text style={styles.inputLabel}>{label}</Text>
+/* =========================================================
+   STYLES
+   ========================================================= */
 
-      <View style={styles.optionWrap}>
-        {options.map((option) => {
-          const isSelected = selected === option;
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
 
-          return (
-            <Pressable
-              key={option}
-              onPress={() => onSelect(option)}
-              style={[styles.optionChip, isSelected && styles.optionChipActive]}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  isSelected && styles.optionTextActive,
-                ]}
-              >
-                {option}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
+      backgroundColor:
+        COLORS.background,
+    },
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#FFF7F0',
-  },
-  content: {
-      paddingHorizontal: PAGE_HORIZONTAL_PADDING,
-  },
-  headerCard: {
-    backgroundColor: '#111827',
-    borderRadius: 30,
-    padding: 22,
-    marginBottom: 16,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  avatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#D97706',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  headerTextWrap: {
-    flex: 1,
-  },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FBBF24',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  name: {
-    marginTop: 4,
-    fontSize: 27,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  email: {
-    marginTop: 3,
-    fontSize: 14,
-    color: '#D1D5DB',
-  },
-  editButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completionWrap: {
-    marginTop: 22,
-  },
-  completionTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  completionText: {
-    color: '#E5E7EB',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  completionPercent: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  progressTrack: {
-    height: 9,
-    borderRadius: 999,
-    backgroundColor: '#374151',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#FBBF24',
-  },
-  completionHint: {
-    marginTop: 9,
-    color: '#D1D5DB',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-  },
-  statValue: {
-    marginTop: 9,
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  statHelper: {
-    marginTop: 2,
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  sectionHeader: {
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    fontSize: 21,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  sectionSubtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#6B7280',
-  },
-  identityGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
-  },
-  profileChip: {
-    width: '47.8%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-  },
-  profileChipIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFF1E6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  profileChipLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#6B7280',
-  },
-  profileChipValue: {
-    marginTop: 3,
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  goalWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 9,
-    marginBottom: 18,
-  },
-  goalChip: {
-    backgroundColor: '#111827',
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  goalText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  routineCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 22,
-  },
-  routineIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#D97706',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  routineTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  routineText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#4B5563',
-  },
-  editRoutineText: {
-    marginTop: 10,
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#D97706',
-    textDecorationLine: 'underline',
-  },
-  compatibilityCard: {
-    backgroundColor: '#D97706',
-    borderRadius: 28,
-    padding: 18,
-    marginBottom: 24,
-  },
-  compatibilityLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FFF7ED',
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
-  compatibilityScore: {
-    marginTop: 5,
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  compatibilityText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  routineList: {
-    gap: 12,
-    marginBottom: 24,
-  },
-  routineStepCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    flexDirection: 'row',
-    gap: 13,
-  },
-  stepNumber: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepNumberText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  stepTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  stepFrequency: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#D97706',
-  },
-  stepProduct: {
-    marginTop: 6,
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#374151',
-  },
-  stepNote: {
-    marginTop: 5,
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#6B7280',
-  },
-  marketplaceCard: {
-    backgroundColor: '#111827',
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 24,
-  },
-  marketplaceTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  marketplaceEyebrow: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FBBF24',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  marketplaceTitle: {
-    marginTop: 4,
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  marketplaceIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#D97706',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  marketplaceText: {
-    marginTop: 12,
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#E5E7EB',
-  },
-  marketplaceButton: {
-    alignSelf: 'flex-start',
-    marginTop: 16,
-    backgroundColor: '#D97706',
-    borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  marketplaceButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  actionGrid: {
-    gap: 12,
-    marginBottom: 24,
-  },
-  actionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-  },
-  actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFF1E6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  actionSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  settingsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  settingIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFF1E6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  settingSubtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#6B7280',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-    marginVertical: 14,
-  },
-  resetButton: {
-    marginTop: 18,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  resetText: {
-    color: '#B91C1C',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.55)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    padding: 22,
-    maxHeight: '92%',
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: '#D1D5DB',
-    marginBottom: 18,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 14,
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  modalSubtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  inputLabel: {
-    marginTop: 14,
-    marginBottom: 8,
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  smallInputLabel: {
-    marginTop: 12,
-    marginBottom: 7,
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#4B5563',
-  },
-  input: {
-    backgroundColor: '#FFF7F0',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#111827',
-  },
-  textArea: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  smallTextArea: {
-    minHeight: 70,
-    textAlignVertical: 'top',
-  },
-  optionWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  optionChip: {
-    backgroundColor: '#FFF7F0',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  optionChipActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  optionText: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  optionTextActive: {
-    color: '#FFFFFF',
-  },
-  modalGoalWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  modalGoalChip: {
-    backgroundColor: '#FFF7F0',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  modalGoalChipActive: {
-    backgroundColor: '#D97706',
-    borderColor: '#D97706',
-  },
-  modalGoalText: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  modalGoalTextActive: {
-    color: '#FFFFFF',
-  },
-  editRoutineCard: {
-    backgroundColor: '#FFF7F0',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#F3D5C0',
-    padding: 14,
-    marginBottom: 12,
-  },
-  editRoutineTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  saveButton: {
-    marginTop: 22,
-    marginBottom: 28,
-    backgroundColor: '#111827',
-    borderRadius: 18,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-});
+    content: {
+      paddingHorizontal:
+        PAGE_HORIZONTAL_PADDING,
+    },
+
+    /* PROFILE HEADER */
+
+    profileHeader: {
+      backgroundColor:
+        COLORS.lemonCream,
+
+      borderRadius: 28,
+
+      padding: 20,
+
+      marginBottom: 28,
+
+      overflow: 'hidden',
+    },
+
+    headerTop: {
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 13,
+    },
+
+    avatar: {
+      width: 62,
+
+      height: 62,
+
+      borderRadius: 20,
+
+      backgroundColor:
+        COLORS.lightBlue,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    avatarText: {
+      fontSize: 27,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    headerTextWrap: {
+      flex: 1,
+    },
+
+    eyebrow: {
+      fontSize: 10,
+
+      fontWeight: '900',
+
+      color: COLORS.green,
+
+      letterSpacing: 1,
+    },
+
+    name: {
+      marginTop: 3,
+
+      fontSize: 25,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    email: {
+      marginTop: 2,
+
+      fontSize: 12,
+
+      color:
+        COLORS.brown,
+    },
+
+    editButton: {
+      width: 40,
+
+      height: 40,
+
+      borderRadius: 14,
+
+      backgroundColor:
+        COLORS.white,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    /* STRENGTH */
+
+    strengthCard: {
+      marginTop: 20,
+
+      paddingTop: 17,
+
+      borderTopWidth: 1,
+
+      borderTopColor:
+        'rgba(61,41,32,0.12)',
+    },
+
+    strengthTop: {
+      flexDirection: 'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'flex-start',
+
+      gap: 12,
+    },
+
+    strengthLabel: {
+      fontSize: 14,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    strengthSubLabel: {
+      marginTop: 2,
+
+      fontSize: 11,
+
+      color:
+        COLORS.brown,
+    },
+
+    strengthPercent: {
+      fontSize: 21,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.green,
+    },
+
+    progressTrack: {
+      height: 8,
+
+      marginTop: 12,
+
+      borderRadius: 999,
+
+      overflow: 'hidden',
+
+      backgroundColor:
+        'rgba(32,49,75,0.10)',
+    },
+
+    progressFill: {
+      height: '100%',
+
+      borderRadius: 999,
+
+      backgroundColor:
+        COLORS.green,
+    },
+
+    strengthHint: {
+      marginTop: 9,
+
+      maxWidth: 320,
+
+      fontSize: 12,
+
+      lineHeight: 18,
+
+      color:
+        COLORS.brown,
+    },
+
+    /* SECTION */
+
+    sectionHeader: {
+      marginBottom: 13,
+    },
+
+    sectionKicker: {
+      marginBottom: 4,
+
+      fontSize: 10,
+
+      fontWeight: '900',
+
+      letterSpacing: 1,
+
+      color:
+        COLORS.green,
+    },
+
+    sectionTitle: {
+      fontSize: 23,
+
+      fontWeight: '900',
+
+      letterSpacing: -0.4,
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    sectionSubtitle: {
+      marginTop: 5,
+
+      maxWidth: 350,
+
+      fontSize: 13,
+
+      lineHeight: 19,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    /* PROFILE GRID */
+
+    identityGrid: {
+      flexDirection: 'row',
+
+      flexWrap: 'wrap',
+
+      gap: 10,
+
+      marginBottom: 30,
+    },
+
+    profileChip: {
+      width: '48%',
+
+      minHeight: 94,
+
+      paddingHorizontal: 12,
+
+      paddingVertical: 11,
+
+      borderRadius: 18,
+
+      backgroundColor:
+        COLORS.white,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+    },
+
+    profileChipExpanded: {
+      minHeight: 150,
+
+      borderColor:
+        COLORS.lightBlue,
+    },
+
+    profileChipTop: {
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      justifyContent:
+        'space-between',
+
+      marginBottom: 7,
+    },
+
+    profileChipIcon: {
+      width: 31,
+
+      height: 31,
+
+      borderRadius: 10,
+
+      backgroundColor:
+        COLORS.lemonCream,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    infoButton: {
+      width: 28,
+
+      height: 28,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    profileChipLabel: {
+      fontSize: 10,
+
+      lineHeight: 13,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.mutedText,
+    },
+
+    profileChipValue: {
+      marginTop: 2,
+
+      fontSize: 16,
+
+      lineHeight: 19,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    profileInfoBubble: {
+      marginTop: 10,
+
+      padding: 9,
+
+      borderRadius: 11,
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    profileInfoText: {
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      color:
+        COLORS.brown,
+    },
+
+    /* GOALS */
+
+    goalWrap: {
+      marginBottom: 30,
+
+      flexDirection: 'row',
+
+      flexWrap: 'wrap',
+
+      gap: 8,
+    },
+
+    goalChip: {
+      paddingHorizontal: 11,
+
+      paddingVertical: 8,
+
+      borderRadius: 999,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 5,
+
+      backgroundColor:
+        COLORS.lightBlue,
+    },
+
+    goalText: {
+      fontSize: 12,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    /* ROUTINE */
+
+    routineCard: {
+      padding: 17,
+
+      marginBottom: 11,
+
+      borderRadius: 23,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+
+      flexDirection: 'row',
+
+      gap: 13,
+    },
+
+    routineIcon: {
+      width: 46,
+
+      height: 46,
+
+      borderRadius: 15,
+
+      backgroundColor:
+        COLORS.lemonCream,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    routineTitle: {
+      marginBottom: 4,
+
+      fontSize: 15,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    routineText: {
+      fontSize: 13,
+
+      lineHeight: 19,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    routineLink: {
+      marginTop: 10,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 3,
+    },
+
+    editRoutineText: {
+      fontSize: 12,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.green,
+    },
+
+    compatibilityCard: {
+      padding: 18,
+
+      marginBottom: 30,
+
+      borderRadius: 23,
+
+      backgroundColor:
+        COLORS.oxfordBlue,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 18,
+    },
+
+    compatibilityScoreWrap: {
+      minWidth: 105,
+    },
+
+    compatibilityEyebrow: {
+      fontSize: 9,
+
+      fontWeight: '900',
+
+      letterSpacing: 0.7,
+
+      color:
+        COLORS.lightBlue,
+    },
+
+    compatibilityScore: {
+      marginTop: 3,
+
+      fontSize: 38,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.white,
+    },
+
+    compatibilityCopy: {
+      flex: 1,
+    },
+
+    compatibilityTitle: {
+      fontSize: 15,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.lemonCream,
+    },
+
+    compatibilityText: {
+      marginTop: 4,
+
+      fontSize: 12,
+
+      lineHeight: 18,
+
+      color: '#E7ECF4',
+    },
+
+    /* SETTINGS */
+
+    settingsCard: {
+      padding: 15,
+
+      marginBottom: 30,
+
+      borderRadius: 23,
+
+      backgroundColor:
+        COLORS.white,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+    },
+
+    settingRow: {
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 11,
+    },
+
+    settingIcon: {
+      width: 40,
+
+      height: 40,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        COLORS.lemonCream,
+
+      alignItems: 'center',
+
+      justifyContent:
+        'center',
+    },
+
+    settingTitle: {
+      fontSize: 13,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    settingSubtitle: {
+      marginTop: 2,
+
+      fontSize: 11,
+
+      lineHeight: 16,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    divider: {
+      height: 1,
+
+      marginVertical: 13,
+
+      backgroundColor:
+        '#EEEBDF',
+    },
+
+    /* NAVIGATION */
+
+    navigationCard: {
+      paddingHorizontal: 15,
+
+      borderRadius: 23,
+
+      backgroundColor:
+        COLORS.white,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+    },
+
+    navigationRow: {
+      minHeight: 67,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 11,
+    },
+
+    navigationTitle: {
+      flex: 1,
+
+      fontSize: 13,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    /* RESET */
+
+    resetButton: {
+      alignSelf: 'center',
+
+      marginTop: 17,
+
+      marginBottom: 14,
+
+      paddingHorizontal: 12,
+
+      paddingVertical: 10,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 6,
+    },
+
+    resetText: {
+      color:
+        COLORS.danger,
+
+      fontSize: 12,
+
+      fontWeight: '900',
+    },
+
+    /* MODAL */
+
+    modalOverlay: {
+      flex: 1,
+
+      justifyContent:
+        'flex-end',
+
+      backgroundColor:
+        'rgba(32,49,75,0.48)',
+    },
+
+    modalCard: {
+      maxHeight: '92%',
+
+      paddingHorizontal: 21,
+
+      backgroundColor:
+        COLORS.background,
+
+      borderTopLeftRadius: 30,
+
+      borderTopRightRadius: 30,
+    },
+
+    modalHandle: {
+      alignSelf: 'center',
+
+      width: 42,
+
+      height: 5,
+
+      marginTop: 10,
+
+      marginBottom: 17,
+
+      borderRadius: 999,
+
+      backgroundColor:
+        '#D5D4CA',
+    },
+
+    modalHeader: {
+      marginBottom: 7,
+
+      flexDirection: 'row',
+
+      justifyContent:
+        'space-between',
+
+      gap: 14,
+    },
+
+    modalTitle: {
+      fontSize: 23,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    modalSubtitle: {
+      maxWidth: 300,
+
+      marginTop: 4,
+
+      fontSize: 13,
+
+      lineHeight: 18,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    inputLabel: {
+      marginTop: 17,
+
+      marginBottom: 7,
+
+      fontSize: 12,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    input: {
+      paddingHorizontal: 13,
+
+      paddingVertical: 12,
+
+      borderRadius: 15,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+
+      fontSize: 14,
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    textArea: {
+      minHeight: 85,
+
+      textAlignVertical:
+        'top',
+    },
+
+    /* CORE OPTIONS */
+
+    optionWrap: {
+      flexDirection: 'row',
+
+      flexWrap: 'wrap',
+
+      gap: 7,
+    },
+
+    optionChip: {
+      paddingHorizontal: 11,
+
+      paddingVertical: 8,
+
+      borderRadius: 999,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+    },
+
+    optionChipActive: {
+      backgroundColor:
+        COLORS.oxfordBlue,
+
+      borderColor:
+        COLORS.oxfordBlue,
+    },
+
+    optionText: {
+      fontSize: 12,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.brown,
+    },
+
+    optionTextActive: {
+      color:
+        COLORS.white,
+    },
+
+    /* OPTIONAL PROFILE */
+
+    optionalIntro: {
+      marginTop: 27,
+
+      marginBottom: 12,
+
+      paddingTop: 20,
+
+      borderTopWidth: 1,
+
+      borderTopColor:
+        COLORS.lightBorder,
+    },
+
+    optionalTitle: {
+      fontSize: 17,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    optionalText: {
+      marginTop: 4,
+
+      fontSize: 12,
+
+      lineHeight: 18,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    toggleCard: {
+      marginTop: 11,
+
+      padding: 14,
+
+      borderRadius: 18,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+    },
+
+    toggleCardActive: {
+      borderColor:
+        COLORS.lightBlue,
+    },
+
+    toggleHeader: {
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      gap: 12,
+    },
+
+    toggleCopy: {
+      flex: 1,
+    },
+
+    toggleTitle: {
+      fontSize: 13,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    toggleDescription: {
+      marginTop: 3,
+
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    toggleBody: {
+      marginTop: 14,
+
+      paddingTop: 13,
+
+      borderTopWidth: 1,
+
+      borderTopColor:
+        '#EEEBDD',
+    },
+
+    /* DROPDOWN */
+
+    dropdownLabel: {
+      marginBottom: 6,
+
+      fontSize: 11,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.brown,
+    },
+
+    dropdownField: {
+      minHeight: 48,
+
+      paddingHorizontal: 13,
+
+      borderRadius: 14,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.background,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      justifyContent:
+        'space-between',
+    },
+
+    dropdownFieldText: {
+      flex: 1,
+
+      fontSize: 13,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    dropdownMenu: {
+      marginTop: 6,
+
+      padding: 5,
+
+      borderRadius: 14,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.background,
+    },
+
+    dropdownOption: {
+      minHeight: 43,
+
+      paddingHorizontal: 11,
+
+      borderRadius: 10,
+
+      flexDirection: 'row',
+
+      alignItems: 'center',
+
+      justifyContent:
+        'space-between',
+    },
+
+    dropdownOptionSelected: {
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    dropdownOptionText: {
+      fontSize: 12,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.brown,
+    },
+
+    dropdownOptionTextSelected: {
+      color:
+        COLORS.oxfordBlue,
+
+      fontWeight: '900',
+    },
+
+    dateFields: {
+      marginTop: 2,
+
+      paddingHorizontal: 3,
+    },
+
+    dateHelp: {
+      marginTop: 6,
+
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    /* GOALS */
+
+    modalGoalWrap: {
+      flexDirection: 'row',
+
+      flexWrap: 'wrap',
+
+      gap: 7,
+    },
+
+    modalGoalChip: {
+      paddingHorizontal: 11,
+
+      paddingVertical: 8,
+
+      borderRadius: 999,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+    },
+
+    modalGoalChipActive: {
+      backgroundColor:
+        COLORS.green,
+
+      borderColor:
+        COLORS.green,
+    },
+
+    modalGoalText: {
+      fontSize: 12,
+
+      fontWeight: '800',
+
+      color:
+        COLORS.brown,
+    },
+
+    modalGoalTextActive: {
+      color:
+        COLORS.white,
+    },
+
+    saveButton: {
+      marginTop: 23,
+
+      marginBottom: 30,
+
+      paddingVertical: 15,
+
+      borderRadius: 17,
+
+      backgroundColor:
+        COLORS.oxfordBlue,
+
+      alignItems: 'center',
+    },
+
+    saveButtonText: {
+      fontSize: 14,
+
+      fontWeight: '900',
+
+      color:
+        COLORS.white,
+    },
+  });

@@ -9,7 +9,8 @@ const db = getFirestore(app);
 
 const INCI_API_KEY = defineSecret('INCI_API_KEY');
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
-
+//const UPCITEMDB_API_KEY = defineSecret('UPCITEMDB_API_KEY');
+//const TAVILY_API_KEY = defineSecret('TAVILY_API_KEY');
 
 type ExternalProductLookupResult = {
   found: boolean;
@@ -765,3 +766,6 @@ list in its original order. Use an empty string when no list is found.
     };
   }
 );
+export {
+  resolveRetailerIngredients,
+} from './retailerIngredientResolver';
