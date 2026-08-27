@@ -1,11 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
+import { takePendingScanResult } from '../../services/scanResultHandoffService';
 import {
   CameraView,
   useCameraPermissions,
 } from 'expo-camera';
-import type { BarcodeScanningResult } from 'expo-camera';
 
-import { router, useFocusEffect } from 'expo-router';
+import type {
+  BarcodeScanningResult,
+} from 'expo-camera';
+
+import {
+  router,
+  useFocusEffect,
+} from 'expo-router';
+
 import {
   useCallback,
   useState,
@@ -22,13 +30,29 @@ import {
   View,
 } from 'react-native';
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
-import { generateProductExplanation } from '../../services/aiExplanationService';
-import { getOrCreateGuestUser } from '../../services/authService';
-import { calculateCompatibility } from '../../services/compatibilityService';
-import { getOrImportProductByBarcode } from '../../services/productFirebaseService';
-import { getUserHairProfileOrNull } from '../../services/profileFirebaseService';
+import {
+  generateProductExplanation,
+} from '../../services/aiExplanationService';
+
+import {
+  getOrCreateGuestUser,
+} from '../../services/authService';
+
+import {
+  calculateCompatibility,
+} from '../../services/compatibilityService';
+
+import {
+  getOrImportProductByBarcode,
+} from '../../services/productFirebaseService';
+
+import {
+  getUserHairProfileOrNull,
+} from '../../services/profileFirebaseService';
 
 import {
   buildScanHistoryItem,
@@ -36,12 +60,16 @@ import {
   saveScanToFirebaseHistory,
 } from '../../services/scanHistoryFirebaseService';
 
-import type { ScanHistoryItem } from '../../services/scanHistoryFirebaseService';
-import type { HairProduct } from '../../types/product.types';
+import type {
+  ScanHistoryItem,
+} from '../../services/scanHistoryFirebaseService';
 
+import type {
+  HairProduct,
+} from '../../types/product.types';
 
 /* =========================================================
-   MANELINE BRAND COLORS
+   COLORS
    ========================================================= */
 
 const COLORS = {
@@ -56,132 +84,225 @@ const COLORS = {
 
   mutedText: '#6B7280',
   lightBorder: '#E7E2CB',
-
-  warning: '#A4563D',
-  warningBackground: '#FFF0EB',
+  danger: '#B91C1C',
 };
-
 
 /* =========================================================
    TYPES
    ========================================================= */
 
-type ScanView = 'scan' | 'recent';
-
+type ScanView =
+  | 'scan'
+  | 'history';
 
 /* =========================================================
    SCREEN
    ========================================================= */
 
 export default function ScanScreen() {
-  const insets = useSafeAreaInsets();
+  const insets =
+    useSafeAreaInsets();
 
-  const [permission, requestPermission] =
+  const [
+    permission,
+    requestPermission,
+  ] =
     useCameraPermissions();
 
-  const [activeView, setActiveView] =
-    useState<ScanView>('scan');
+  /* -------------------------------------------------------
+     PAGE MODE
+     ------------------------------------------------------- */
 
-  const [scanned, setScanned] =
-    useState(false);
+  const [
+    activeView,
+    setActiveView,
+  ] =
+    useState<ScanView>(
+      'scan'
+    );
 
-  const [lookingUp, setLookingUp] =
+  /* -------------------------------------------------------
+     SCANNER
+     ------------------------------------------------------- */
+
+  const [
+    scanned,
+    setScanned,
+  ] =
     useState(false);
 
   const [
-    notFoundBarcode,
-    setNotFoundBarcode,
-  ] = useState<string | null>(null);
+    lookingUp,
+    setLookingUp,
+  ] =
+    useState(false);
 
   const [
     latestScan,
     setLatestScan,
-  ] = useState<{
-    item: ScanHistoryItem;
-    product: HairProduct;
-  } | null>(null);
+  ] =
+    useState<{
+      item: ScanHistoryItem;
+      product: HairProduct;
+    } | null>(
+      null
+    );
 
-
-  /* =======================================================
-     HISTORY STATE
-     ======================================================= */
+  /* -------------------------------------------------------
+     HISTORY
+     ------------------------------------------------------- */
 
   const [
-    recentScans,
-    setRecentScans,
-  ] = useState<ScanHistoryItem[]>([]);
+    history,
+    setHistory,
+  ] =
+    useState<
+      ScanHistoryItem[]
+    >([]);
 
   const [
     historyLoading,
     setHistoryLoading,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
-    historyError,
-    setHistoryError,
-  ] = useState(false);
-
-  const [
-    expandedScanId,
-    setExpandedScanId,
-  ] = useState<string | null>(null);
-
+    expandedHistoryId,
+    setExpandedHistoryId,
+  ] =
+    useState<string | null>(
+      null
+    );
 
   /* =======================================================
-     LOAD HISTORY WHEN SCREEN IS FOCUSED
+     LOAD HISTORY WHEN SCREEN GAINS FOCUS
      ======================================================= */
 
   useFocusEffect(
     useCallback(() => {
-      loadRecentScans();
+      void loadHistory();
     }, [])
   );
 
+  async function loadHistory() {
+    setHistoryLoading(true);
 
-  async function loadRecentScans() {
     try {
-      setHistoryLoading(true);
-      setHistoryError(false);
-
-      /*
-       * Makes sure the anonymous Firebase user exists
-       * before reading their history.
-       */
       await getOrCreateGuestUser();
 
-      const history =
+      const items =
         await getScanHistoryFromFirebase();
 
-      /*
-       * PRD:
-       * Surface roughly 10–15 recent scans.
-       *
-       * We are starting with 10.
-       */
-      setRecentScans(history.slice(0, 10));
+      setHistory(items);
     } catch (error) {
       console.warn(
         '[ManeLine history] Could not load history:',
         error
       );
-
-      setHistoryError(true);
     } finally {
       setHistoryLoading(false);
     }
   }
+useFocusEffect(
+  useCallback(() => {
+    let active =
+      true;
 
+    async function checkForCompletedOcrScan() {
+      const pending =
+        await takePendingScanResult();
 
+      if (
+        !active ||
+        !pending
+      ) {
+        return;
+      }
+
+      /*
+       * Keep the barcode scanner
+       * paused while the result
+       * modal is visible.
+       */
+      setScanned(true);
+
+      
+      /*
+       * This automatically opens
+       * the existing result modal.
+       */
+      setLatestScan(
+        pending
+      );
+
+      
+    }
+
+    void checkForCompletedOcrScan();
+
+    return () => {
+      active =
+        false;
+    };
+  }, [])
+);
+useFocusEffect(
+  useCallback(() => {
+    let active =
+      true;
+
+    async function loadPendingResult() {
+      const pending =
+        await takePendingScanResult();
+
+      if (
+        !active ||
+        !pending
+      ) {
+        return;
+      }
+
+      /*
+       * Pause barcode scanning while
+       * the result modal is open.
+       */
+      setScanned(true);
+
+      /*
+       * The existing Scan modal opens
+       * because latestScan becomes
+       * non-null.
+       */
+      setLatestScan(
+        pending
+      );
+    }
+
+    void loadPendingResult();
+
+    return () => {
+      active =
+        false;
+    };
+  }, [])
+);
   /* =======================================================
      BARCODE SCAN
      ======================================================= */
 
   async function handleBarcodeScanned(
-    result: BarcodeScanningResult
+    result:
+      BarcodeScanningResult
   ) {
-    if (scanned || lookingUp) return;
+    if (
+      scanned ||
+      lookingUp
+    ) {
+      return;
+    }
 
-    const barcode = result.data?.trim();
+    const barcode =
+      result.data?.trim();
 
     if (!barcode) {
       Alert.alert(
@@ -194,20 +315,19 @@ export default function ScanScreen() {
 
     setScanned(true);
     setLookingUp(true);
-
-    setNotFoundBarcode(null);
     setLatestScan(null);
 
     try {
-      /*
-       * Make sure a Firebase guest user exists.
-       */
+      /* -----------------------------------------------
+         AUTH
+         ----------------------------------------------- */
+
       await getOrCreateGuestUser();
 
-      /*
-       * Get the hair profile that compatibility
-       * will be calculated against.
-       */
+      /* -----------------------------------------------
+         PROFILE
+         ----------------------------------------------- */
+
       const profile =
         await getUserHairProfileOrNull();
 
@@ -221,58 +341,46 @@ export default function ScanScreen() {
         return;
       }
 
-      /*
-       * Your existing product lookup pipeline.
-       *
-       * This service handles the fallback logic
-       * rather than putting the lookup chain
-       * inside the UI.
-       */
+      /* -----------------------------------------------
+         PRODUCT LOOKUP
+         ----------------------------------------------- */
+
       const product =
         await getOrImportProductByBarcode(
           barcode
         );
 
-
-      /* ---------------------------------------------------
-         PRODUCT COULD NOT BE IDENTIFIED
-         --------------------------------------------------- */
+      /* ===============================================
+         OCR FALLBACK:
+         PRODUCT IDENTITY ALSO MISSING
+         =============================================== */
 
       if (!product) {
-        setNotFoundBarcode(barcode);
+        setScanned(false);
 
-        return;
-      }
-
-
-      /* ---------------------------------------------------
-         PRODUCT FOUND, BUT INGREDIENTS MISSING
-         --------------------------------------------------- */
-
-      if (!product.ingredients?.length) {
         Alert.alert(
-          'Ingredients needed',
-          `${product.name} was identified, but ManeLine could not verify its ingredient list online.`,
+          'Product not identified',
+          'ManeLine could not identify this barcode online. You can still continue by scanning the ingredient label.',
           [
             {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => {
-                setScanned(false);
-              },
-            },
-            {
-              text: 'Scan ingredient label',
-              onPress: () => {
-                setScanned(false);
+              text:
+                'Try barcode again',
 
+              style:
+                'cancel',
+            },
+
+            {
+              text:
+                'Scan ingredient label',
+
+              onPress: () => {
                 router.push({
                   pathname:
-                    '/review-scan',
+                    '/scan-ingredients',
+
                   params: {
                     barcode,
-                    scanMode:
-                      'ingredients',
                   },
                 });
               },
@@ -283,10 +391,66 @@ export default function ScanScreen() {
         return;
       }
 
+      /* ===============================================
+         OCR FALLBACK:
+         PRODUCT FOUND BUT INGREDIENTS MISSING
+         =============================================== */
 
-      /* ---------------------------------------------------
-         CALCULATE HAIR COMPATIBILITY
-         --------------------------------------------------- */
+      if (
+        !product.ingredients ||
+        product.ingredients.length ===
+          0
+      ) {
+        setScanned(false);
+
+        Alert.alert(
+          'Ingredients needed',
+          `${product.name} was identified, but ManeLine could not verify its ingredient list online. Scan the ingredient label to continue.`,
+          [
+            {
+              text:
+                'Try barcode again',
+
+              style:
+                'cancel',
+            },
+
+            {
+              text:
+                'Scan ingredient label',
+
+              onPress: () => {
+                router.push({
+                  pathname:
+                    '/scan-ingredients',
+
+                  params: {
+                    barcode,
+
+                    productId:
+                      product.id,
+
+                    productName:
+                      product.name,
+
+                    brand:
+                      product.brand,
+
+                    category:
+                      product.category,
+                  },
+                });
+              },
+            },
+          ]
+        );
+
+        return;
+      }
+
+      /* ===============================================
+         NORMAL PRODUCT ANALYSIS
+         =============================================== */
 
       const compatibility =
         calculateCompatibility(
@@ -294,22 +458,12 @@ export default function ScanScreen() {
           profile
         );
 
-
-      /* ---------------------------------------------------
-         GEMINI / AI EXPLANATION
-         --------------------------------------------------- */
-
       const explanation =
         await generateProductExplanation({
           product,
           profile,
           compatibility,
         });
-
-
-      /* ---------------------------------------------------
-         CREATE HISTORY ITEM
-         --------------------------------------------------- */
 
       const scanItem =
         buildScanHistoryItem({
@@ -333,45 +487,31 @@ export default function ScanScreen() {
             explanation,
         });
 
-
-      /* ---------------------------------------------------
-         SAVE TO FIREBASE
-         --------------------------------------------------- */
-
       await saveScanToFirebaseHistory(
         scanItem
       );
 
-
       /*
-       * Immediately add the new result to the
-       * recent scans list.
-       *
-       * No need to make the user refresh.
+       * Immediately update History UI.
        */
-      setRecentScans((previous) => {
-        const withoutDuplicate =
-          previous.filter(
-            (item) =>
-              item.id !== scanItem.id
-          );
-
-        return [
+      setHistory(
+        (current) => [
           scanItem,
-          ...withoutDuplicate,
-        ].slice(0, 10);
-      });
 
-
-      /* ---------------------------------------------------
-         DISPLAY RESULT
-         --------------------------------------------------- */
+          ...current.filter(
+            (item) =>
+              item.id !==
+              scanItem.id
+          ),
+        ]
+      );
 
       setLatestScan({
-        item: scanItem,
+        item:
+          scanItem,
+
         product,
       });
-
     } catch (error) {
       console.warn(
         '[ManeLine scan] Scan failed:',
@@ -384,127 +524,222 @@ export default function ScanScreen() {
       );
 
       setScanned(false);
-
     } finally {
       setLookingUp(false);
     }
   }
 
-
   /* =======================================================
-     RESET SCANNER
+     RESET
      ======================================================= */
 
   function resetScanner() {
     setScanned(false);
-    setNotFoundBarcode(null);
+
     setLatestScan(null);
   }
 
-
   /* =======================================================
-     OPEN RECENT SCANS
+     OPEN HISTORY
      ======================================================= */
 
-  function openRecentScans() {
-    resetScanner();
+  async function openHistory() {
+    setActiveView(
+      'history'
+    );
 
-    setExpandedScanId(null);
-    setActiveView('recent');
-
-    loadRecentScans();
+    await loadHistory();
   }
 
-
   /* =======================================================
-     SWITCH BACK TO SCAN
+     PERMISSION LOADING
      ======================================================= */
 
-  function openScanner() {
-    setExpandedScanId(null);
-    setActiveView('scan');
-
-    resetScanner();
-  }
-
-
-  /* =======================================================
-     EXPAND / COLLAPSE HISTORY CARD
-     ======================================================= */
-
-  function toggleHistoryCard(
-    id: string
-  ) {
-    setExpandedScanId(
-      (current) =>
-        current === id
-          ? null
-          : id
+  if (!permission) {
+    return (
+      <View
+        style={
+          styles.centeredScreen
+        }
+      >
+        <ActivityIndicator
+          color={
+            COLORS.oxfordBlue
+          }
+        />
+      </View>
     );
   }
 
+  /* =======================================================
+     CAMERA PERMISSION
+     ======================================================= */
+
+  if (
+    !permission.granted &&
+    activeView ===
+      'scan'
+  ) {
+    return (
+      <View
+        style={
+          styles.centeredScreen
+        }
+      >
+        <View
+          style={
+            styles.permissionCard
+          }
+        >
+          <View
+            style={
+              styles.permissionIcon
+            }
+          >
+            <Ionicons
+              name="camera-outline"
+              size={34}
+              color={
+                COLORS.oxfordBlue
+              }
+            />
+          </View>
+
+          <Text
+            style={
+              styles.permissionTitle
+            }
+          >
+            Camera access needed
+          </Text>
+
+          <Text
+            style={
+              styles.permissionText
+            }
+          >
+            ManeLine needs your
+            camera to scan product
+            barcodes and ingredient
+            labels.
+          </Text>
+
+          <Pressable
+            style={
+              styles.primaryButton
+            }
+            onPress={
+              requestPermission
+            }
+          >
+            <Text
+              style={
+                styles.primaryButtonText
+              }
+            >
+              Allow camera access
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   /* =======================================================
-     MAIN SCREEN
+     MAIN UI
      ======================================================= */
 
   return (
-    <View style={styles.screen}>
+    <View
+      style={
+        styles.screen
+      }
+    >
       <ScrollView
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
         contentContainerStyle={[
           styles.content,
+
           {
             paddingTop:
-              insets.top + 18,
+              insets.top +
+              18,
 
             paddingBottom:
               140,
           },
         ]}
       >
-
         {/* ===============================================
-            PAGE HEADER
+            HEADER
             =============================================== */}
 
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>
-            MANELINE
+        <View
+          style={
+            styles.header
+          }
+        >
+          <Text
+            style={
+              styles.eyebrow
+            }
+          >
+            PRODUCT SCANNER
           </Text>
 
-          <Text style={styles.title}>
-            Scan & analyze
+          <Text
+            style={
+              styles.title
+            }
+          >
+            Know what works
+            for your hair.
           </Text>
 
-          <Text style={styles.subtitle}>
-            Scan a hair product to understand
-            its ingredients and see how well it
-            matches your hair.
+          <Text
+            style={
+              styles.subtitle
+            }
+          >
+            Scan products,
+            understand their
+            ingredients, and keep
+            your results in one
+            place.
           </Text>
         </View>
 
-
         {/* ===============================================
-            SCAN / RECENT SEGMENT CONTROL
+            SCAN / HISTORY SWITCH
             =============================================== */}
 
-        <View style={styles.segmentControl}>
-
+        <View
+          style={
+            styles.viewSwitcher
+          }
+        >
           <Pressable
             style={[
-              styles.segmentButton,
+              styles.viewSwitchButton,
 
-              activeView === 'scan' &&
-                styles.segmentButtonActive,
+              activeView ===
+                'scan' &&
+                styles.viewSwitchButtonActive,
             ]}
-            onPress={openScanner}
+            onPress={() =>
+              setActiveView(
+                'scan'
+              )
+            }
           >
             <Ionicons
               name="scan-outline"
-              size={18}
+              size={17}
               color={
-                activeView === 'scan'
+                activeView ===
+                'scan'
                   ? COLORS.white
                   : COLORS.oxfordBlue
               }
@@ -512,31 +747,35 @@ export default function ScanScreen() {
 
             <Text
               style={[
-                styles.segmentText,
+                styles.viewSwitchText,
 
-                activeView === 'scan' &&
-                  styles.segmentTextActive,
+                activeView ===
+                  'scan' &&
+                  styles.viewSwitchTextActive,
               ]}
             >
               Scan
             </Text>
           </Pressable>
 
-
           <Pressable
             style={[
-              styles.segmentButton,
+              styles.viewSwitchButton,
 
-              activeView === 'recent' &&
-                styles.segmentButtonActive,
+              activeView ===
+                'history' &&
+                styles.viewSwitchButtonActive,
             ]}
-            onPress={openRecentScans}
+            onPress={() =>
+              void openHistory()
+            }
           >
             <Ionicons
               name="time-outline"
-              size={18}
+              size={17}
               color={
-                activeView === 'recent'
+                activeView ===
+                'history'
                   ? COLORS.white
                   : COLORS.oxfordBlue
               }
@@ -544,316 +783,91 @@ export default function ScanScreen() {
 
             <Text
               style={[
-                styles.segmentText,
+                styles.viewSwitchText,
 
-                activeView === 'recent' &&
-                  styles.segmentTextActive,
+                activeView ===
+                  'history' &&
+                  styles.viewSwitchTextActive,
               ]}
             >
-              Recent scans
+              History
             </Text>
           </Pressable>
-
         </View>
 
-
         {/* ===============================================
-            SCANNER
+            SCAN VIEW
             =============================================== */}
 
-        {activeView === 'scan' ? (
-          <View>
-
-            {/* -------------------------------------------
-                CAMERA PERMISSION LOADING
-                ------------------------------------------- */}
-
-            {!permission ? (
-              <View style={styles.cameraLoadingCard}>
-                <ActivityIndicator
-                  color={COLORS.oxfordBlue}
-                />
-
-                <Text style={styles.loadingLabel}>
-                  Getting camera ready...
-                </Text>
-              </View>
-            ) : null}
-
-
-            {/* -------------------------------------------
-                CAMERA PERMISSION NOT GRANTED
-                ------------------------------------------- */}
-
-            {permission &&
-            !permission.granted ? (
-              <View style={styles.permissionCard}>
-
-                <View
-                  style={
-                    styles.permissionIcon
-                  }
-                >
-                  <Ionicons
-                    name="camera-outline"
-                    size={30}
-                    color={
-                      COLORS.oxfordBlue
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.permissionTitle
-                  }
-                >
-                  Camera access needed
-                </Text>
-
-                <Text
-                  style={
-                    styles.permissionText
-                  }
-                >
-                  ManeLine needs access to
-                  your camera to scan product
-                  barcodes.
-                </Text>
-
-                <Pressable
-                  style={
-                    styles.primaryButton
-                  }
-                  onPress={
-                    requestPermission
-                  }
-                >
-                  <Text
-                    style={
-                      styles.primaryButtonText
-                    }
-                  >
-                    Allow camera access
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={
-                    styles.viewRecentLink
-                  }
-                  onPress={
-                    openRecentScans
-                  }
-                >
-                  <Text
-                    style={
-                      styles.viewRecentText
-                    }
-                  >
-                    View recent scans instead
-                  </Text>
-                </Pressable>
-
-              </View>
-            ) : null}
-
-
-            {/* -------------------------------------------
-                CAMERA
-                ------------------------------------------- */}
-
-            {permission?.granted ? (
-              <>
-                <View
-                  style={
-                    styles.cameraWrap
-                  }
-                >
-                  <CameraView
-                    style={styles.camera}
-                    facing="back"
-                    onBarcodeScanned={
-                      scanned
-                        ? undefined
-                        : handleBarcodeScanned
-                    }
-                    barcodeScannerSettings={{
-                      barcodeTypes: [
-                        'ean13',
-                        'ean8',
-                        'upc_a',
-                        'upc_e',
-                        'code128',
-                        'code39',
-                        'qr',
-                      ],
-                    }}
-                  />
-
-
-                  {/* SCAN FRAME */}
-
-                  <View
-                    style={
-                      styles.scanFrame
-                    }
-                  >
-                    <View
-                      style={
-                        styles.cornerTopLeft
-                      }
-                    />
-
-                    <View
-                      style={
-                        styles.cornerTopRight
-                      }
-                    />
-
-                    <View
-                      style={
-                        styles.cornerBottomLeft
-                      }
-                    />
-
-                    <View
-                      style={
-                        styles.cornerBottomRight
-                      }
-                    />
-                  </View>
-
-
-                  {/* LOOKUP OVERLAY */}
-
-                  {lookingUp ? (
-                    <View
-                      style={
-                        styles.lookupOverlay
-                      }
-                    >
-                      <ActivityIndicator
-                        color={
-                          COLORS.white
-                        }
-                      />
-
-                      <View>
-                        <Text
-                          style={
-                            styles.lookupText
-                          }
-                        >
-                          Analyzing product...
-                        </Text>
-
-                        <Text
-                          style={
-                            styles.lookupSubtext
-                          }
-                        >
-                          Looking up ingredients
-                          and checking your match.
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-
-                </View>
-
-
-                <View style={styles.scanTip}>
-                  <Ionicons
-                    name="barcode-outline"
-                    size={18}
-                    color={
-                      COLORS.oxfordBlue
-                    }
-                  />
-
-                  <Text
-                    style={
-                      styles.scanHelp
-                    }
-                  >
-                    Hold the barcode inside
-                    the frame and keep your
-                    camera steady.
-                  </Text>
-                </View>
-              </>
-            ) : null}
-
-
-            {/* -------------------------------------------
-                PRODUCT NOT FOUND
-                ------------------------------------------- */}
-
-            {notFoundBarcode ? (
-              <View
+        {activeView ===
+        'scan' ? (
+          <>
+            <View
+              style={
+                styles.cameraWrap
+              }
+            >
+              <CameraView
                 style={
-                  styles.notFoundCard
+                  styles.camera
+                }
+                facing="back"
+                onBarcodeScanned={
+                  scanned
+                    ? undefined
+                    : handleBarcodeScanned
+                }
+                barcodeScannerSettings={{
+                  barcodeTypes: [
+                    'ean13',
+                    'ean8',
+                    'upc_a',
+                    'upc_e',
+                    'code128',
+                    'code39',
+                    'qr',
+                  ],
+                }}
+              />
+
+              <View
+                pointerEvents="none"
+                style={
+                  styles.scanFrame
                 }
               >
                 <View
                   style={
-                    styles.notFoundIcon
+                    styles.cornerTopLeft
                   }
-                >
-                  <Ionicons
-                    name="search-outline"
-                    size={24}
-                    color={
-                      COLORS.warning
-                    }
-                  />
-                </View>
+                />
 
-                <Text
+                <View
                   style={
-                    styles.notFoundTitle
+                    styles.cornerTopRight
                   }
-                >
-                  We couldn't identify this product
-                </Text>
+                />
 
-                <Text
+                <View
                   style={
-                    styles.notFoundText
+                    styles.cornerBottomLeft
                   }
-                >
-                  Barcode {notFoundBarcode}
-                  {' '}wasn't found in ManeLine's
-                  current product sources.
-                </Text>
+                />
 
-
-                <Pressable
+                <View
                   style={
-                    styles.ingredientButton
+                    styles.cornerBottomRight
                   }
-                  onPress={() => {
-                    const barcode =
-                      notFoundBarcode;
+                />
+              </View>
 
-                    resetScanner();
-
-                    router.push({
-                      pathname:
-                        '/review-scan',
-
-                      params: {
-                        barcode,
-                        scanMode:
-                          'ingredients',
-                      },
-                    });
-                  }}
+              {lookingUp ? (
+                <View
+                  style={
+                    styles.lookupOverlay
+                  }
                 >
-                  <Ionicons
-                    name="camera-outline"
-                    size={18}
+                  <ActivityIndicator
                     color={
                       COLORS.white
                     }
@@ -861,42 +875,42 @@ export default function ScanScreen() {
 
                   <Text
                     style={
-                      styles.ingredientButtonText
+                      styles.lookupTitle
                     }
                   >
-                    Scan ingredient label
+                    Looking up
+                    product...
                   </Text>
-                </Pressable>
 
-
-                <Pressable
-                  style={
-                    styles.tryAgainButton
-                  }
-                  onPress={
-                    resetScanner
-                  }
-                >
                   <Text
                     style={
-                      styles.tryAgainButtonText
+                      styles.lookupText
                     }
                   >
-                    Try barcode again
+                    Checking product
+                    data and verified
+                    ingredient sources.
                   </Text>
-                </Pressable>
+                </View>
+              ) : null}
+            </View>
 
-              </View>
-            ) : null}
-
-
-            {/* -------------------------------------------
-                GENERIC SCAN AGAIN BUTTON
-                ------------------------------------------- */}
+            <Text
+              style={
+                styles.scanHelp
+              }
+            >
+              Hold the barcode
+              inside the frame. If
+              ManeLine cannot verify
+              ingredients online,
+              you'll be prompted to
+              photograph the
+              ingredient label.
+            </Text>
 
             {scanned &&
             !lookingUp &&
-            !notFoundBarcode &&
             !latestScan ? (
               <Pressable
                 style={
@@ -906,75 +920,75 @@ export default function ScanScreen() {
                   resetScanner
                 }
               >
+                <Ionicons
+                  name="refresh-outline"
+                  size={17}
+                  color={
+                    COLORS.oxfordBlue
+                  }
+                />
+
                 <Text
                   style={
                     styles.secondaryButtonText
                   }
                 >
-                  Scan again
+                  Scan another
+                  product
                 </Text>
               </Pressable>
             ) : null}
+          </>
+        ) : (
+          /* =============================================
+             HISTORY VIEW
+             ============================================= */
 
-          </View>
-        ) : null}
-
-
-        {/* ===============================================
-            RECENT SCANS
-            =============================================== */}
-
-        {activeView === 'recent' ? (
-          <View style={styles.recentSection}>
-
+          <View
+            style={
+              styles.historySection
+            }
+          >
             <View
               style={
-                styles.recentHeader
+                styles.historyHeader
               }
             >
-              <View style={{ flex: 1 }}>
-
+              <View>
                 <Text
                   style={
-                    styles.recentTitle
+                    styles.historyEyebrow
                   }
                 >
-                  Recent scans
+                  YOUR SCANS
                 </Text>
 
                 <Text
                   style={
-                    styles.recentSubtitle
+                    styles.historyTitle
                   }
                 >
-                  Your 10 most recently
-                  analyzed products.
+                  Scan history
                 </Text>
-
               </View>
-
 
               <Pressable
                 style={
-                  styles.refreshButton
+                  styles.refreshHistoryButton
                 }
-                onPress={
-                  loadRecentScans
+                onPress={() =>
+                  void loadHistory()
                 }
-                hitSlop={8}
               >
                 <Ionicons
                   name="refresh-outline"
-                  size={20}
+                  size={17}
                   color={
                     COLORS.oxfordBlue
                   }
                 />
               </Pressable>
             </View>
-
-
-            {/* HISTORY LOADING */}
 
             {historyLoading ? (
               <View
@@ -993,71 +1007,14 @@ export default function ScanScreen() {
                     styles.historyLoadingText
                   }
                 >
-                  Loading recent scans...
+                  Loading history...
                 </Text>
               </View>
-            ) : null}
-
-
-            {/* HISTORY ERROR */}
-
-            {!historyLoading &&
-            historyError ? (
+            ) : history.length ===
+              0 ? (
               <View
                 style={
-                  styles.historyMessageCard
-                }
-              >
-                <Ionicons
-                  name="cloud-offline-outline"
-                  size={25}
-                  color={
-                    COLORS.brown
-                  }
-                />
-
-                <Text
-                  style={
-                    styles.historyMessageTitle
-                  }
-                >
-                  Couldn't load recent scans
-                </Text>
-
-                <Text
-                  style={
-                    styles.historyMessageText
-                  }
-                >
-                  Check your connection and
-                  try again.
-                </Text>
-
-                <Pressable
-                  onPress={
-                    loadRecentScans
-                  }
-                >
-                  <Text
-                    style={
-                      styles.historyRetryText
-                    }
-                  >
-                    Try again
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-
-            {/* EMPTY HISTORY */}
-
-            {!historyLoading &&
-            !historyError &&
-            recentScans.length === 0 ? (
-              <View
-                style={
-                  styles.historyMessageCard
+                  styles.emptyHistoryCard
                 }
               >
                 <View
@@ -1066,8 +1023,8 @@ export default function ScanScreen() {
                   }
                 >
                   <Ionicons
-                    name="scan-outline"
-                    size={28}
+                    name="time-outline"
+                    size={25}
                     color={
                       COLORS.oxfordBlue
                     }
@@ -1076,7 +1033,7 @@ export default function ScanScreen() {
 
                 <Text
                   style={
-                    styles.historyMessageTitle
+                    styles.emptyHistoryTitle
                   }
                 >
                   No scans yet
@@ -1084,69 +1041,79 @@ export default function ScanScreen() {
 
                 <Text
                   style={
-                    styles.historyMessageText
+                    styles.emptyHistoryText
                   }
                 >
-                  Your product scans will
-                  appear here after ManeLine
-                  analyzes them.
+                  Products you analyze
+                  will appear here.
                 </Text>
 
                 <Pressable
                   style={
-                    styles.emptyScanButton
+                    styles.emptyHistoryButton
                   }
-                  onPress={
-                    openScanner
+                  onPress={() =>
+                    setActiveView(
+                      'scan'
+                    )
                   }
                 >
                   <Text
                     style={
-                      styles.emptyScanButtonText
+                      styles.emptyHistoryButtonText
                     }
                   >
-                    Scan your first product
+                    Scan a product
                   </Text>
                 </Pressable>
               </View>
-            ) : null}
-
-
-            {/* HISTORY CARDS */}
-
-            {!historyLoading &&
-            !historyError
-              ? recentScans.map(
+            ) : (
+              <View
+                style={
+                  styles.historyList
+                }
+              >
+                {history.map(
                   (item) => (
                     <HistoryCard
-                      key={item.id}
-                      item={item}
-                      expanded={
-                        expandedScanId ===
+                      key={
                         item.id
                       }
-                      onPress={() =>
-                        toggleHistoryCard(
-                          item.id
+                      item={
+                        item
+                      }
+                      expanded={
+                        expandedHistoryId ===
+                        item.id
+                      }
+                      onToggle={() =>
+                        setExpandedHistoryId(
+                          (
+                            current
+                          ) =>
+                            current ===
+                            item.id
+                              ? null
+                              : item.id
                         )
                       }
                     />
                   )
-                )
-              : null}
-
+                )}
+              </View>
+            )}
           </View>
-        ) : null}
-
+        )}
       </ScrollView>
 
-
-      {/* =================================================
-          NEW SCAN RESULT MODAL
-          ================================================= */}
+      {/* ===============================================
+          RESULT MODAL
+          =============================================== */}
 
       <Modal
-        visible={!!latestScan}
+        visible={
+          !!latestScan
+        }
         animationType="slide"
         transparent
         onRequestClose={
@@ -1158,50 +1125,28 @@ export default function ScanScreen() {
             styles.modalOverlay
           }
         >
-
           <View
             style={
               styles.modalCard
             }
           >
-
-            <View
-              style={
-                styles.modalHandle
-              }
-            />
-
-
             {latestScan ? (
-              <ScrollView
-                showsVerticalScrollIndicator={
-                  false
-                }
-              >
-
-                {/* MODAL HEADER */}
-
+              <>
                 <View
                   style={
                     styles.modalHeader
                   }
                 >
-                  <View
+                  <Text
                     style={
-                      styles.modalProductIcon
+                      styles.modalEmoji
                     }
                   >
-                    <Text
-                      style={
-                        styles.modalEmoji
-                      }
-                    >
-                      {latestScan
-                        .product
-                        .imageEmoji ??
-                        '🧴'}
-                    </Text>
-                  </View>
+                    {latestScan
+                      .product
+                      .imageEmoji ??
+                      '🧴'}
+                  </Text>
 
                   <Pressable
                     onPress={
@@ -1219,18 +1164,16 @@ export default function ScanScreen() {
                   </Pressable>
                 </View>
 
-
-                {/* PRODUCT */}
-
                 <Text
                   style={
                     styles.modalBrand
                   }
                 >
-                  {latestScan
-                    .product
-                    .brand ||
-                    'Hair product'}
+                  {
+                    latestScan
+                      .product
+                      .brand
+                  }
                 </Text>
 
                 <Text
@@ -1238,55 +1181,43 @@ export default function ScanScreen() {
                     styles.modalTitle
                   }
                 >
-                  {latestScan
-                    .product
-                    .name}
+                  {
+                    latestScan
+                      .product
+                      .name
+                  }
                 </Text>
-
-
-                {/* SCORE */}
 
                 <View
                   style={
                     styles.modalScoreCard
                   }
                 >
-                  <View>
-                    <Text
-                      style={
-                        styles.modalScoreEyebrow
-                      }
-                    >
-                      YOUR MATCH
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.modalScoreLabel
-                      }
-                    >
-                      {latestScan
-                        .item
-                        .compatibilityLabel ||
-                        'Analyzed'}
-                    </Text>
-                  </View>
-
                   <Text
                     style={
                       styles.modalScore
                     }
                   >
-                    {latestScan
-                      .item
-                      .compatibilityScore ??
-                      '--'}
+                    {
+                      latestScan
+                        .item
+                        .compatibilityScore
+                    }
                     %
                   </Text>
+
+                  <Text
+                    style={
+                      styles.modalScoreLabel
+                    }
+                  >
+                    {
+                      latestScan
+                        .item
+                        .compatibilityLabel
+                    }
+                  </Text>
                 </View>
-
-
-                {/* SUMMARY */}
 
                 <Text
                   style={
@@ -1301,63 +1232,44 @@ export default function ScanScreen() {
                     styles.modalText
                   }
                 >
-                  {latestScan
-                    .item
-                    .summary}
+                  {
+                    latestScan
+                      .item
+                      .summary
+                  }
                 </Text>
 
-
-                {/* MATCH REASONS */}
+                <Text
+                  style={
+                    styles.modalSectionTitle
+                  }
+                >
+                  Why it matched
+                </Text>
 
                 {latestScan
                   .item
                   .matchReasons
-                  ?.length ? (
-                  <>
-                    <Text
-                      style={
-                        styles.modalSectionTitle
-                      }
-                    >
-                      Why it matched
-                    </Text>
-
-                    {latestScan
-                      .item
-                      .matchReasons
-                      .slice(0, 3)
-                      .map(
-                        (
-                          reason,
-                          index
-                        ) => (
-                          <View
-                            key={`${reason}-${index}`}
-                            style={
-                              styles.reasonRow
-                            }
-                          >
-                            <View
-                              style={
-                                styles.reasonDot
-                              }
-                            />
-
-                            <Text
-                              style={
-                                styles.bulletText
-                              }
-                            >
-                              {reason}
-                            </Text>
-                          </View>
-                        )
-                      )}
-                  </>
-                ) : null}
-
-
-                {/* CAUTIONS */}
+                  ?.slice(
+                    0,
+                    3
+                  )
+                  .map(
+                    (
+                      reason
+                    ) => (
+                      <Text
+                        key={
+                          reason
+                        }
+                        style={
+                          styles.bulletText
+                        }
+                      >
+                        • {reason}
+                      </Text>
+                    )
+                  )}
 
                 {latestScan
                   .item
@@ -1369,62 +1281,60 @@ export default function ScanScreen() {
                         styles.modalSectionTitle
                       }
                     >
-                      What to watch
+                      Cautions
                     </Text>
 
                     {latestScan
                       .item
                       .cautions
-                      .slice(0, 2)
+                      .slice(
+                        0,
+                        2
+                      )
                       .map(
                         (
-                          caution,
-                          index
+                          caution
                         ) => (
-                          <View
-                            key={`${caution}-${index}`}
+                          <Text
+                            key={
+                              caution
+                            }
                             style={
-                              styles.cautionRow
+                              styles.bulletText
                             }
                           >
-                            <Ionicons
-                              name="alert-circle-outline"
-                              size={17}
-                              color={
-                                COLORS.warning
-                              }
-                            />
-
-                            <Text
-                              style={
-                                styles.cautionText
-                              }
-                            >
-                              {caution}
-                            </Text>
-                          </View>
+                            •{' '}
+                            {
+                              caution
+                            }
+                          </Text>
                         )
                       )}
                   </>
                 ) : null}
 
-
-                {/* RECENT SCANS BUTTON */}
-
                 <Pressable
                   style={
-                    styles.recentButton
+                    styles.historyButton
                   }
-                  onPress={
-                    openRecentScans
-                  }
+                  onPress={() => {
+                    setLatestScan(
+                      null
+                    );
+
+                    setScanned(
+                      false
+                    );
+
+                    void openHistory();
+                  }}
                 >
                   <Text
                     style={
-                      styles.recentButtonText
+                      styles.historyButtonText
                     }
                   >
-                    View recent scans
+                    View in history
                   </Text>
 
                   <Ionicons
@@ -1435,37 +1345,14 @@ export default function ScanScreen() {
                     }
                   />
                 </Pressable>
-
-
-                <Pressable
-                  style={
-                    styles.scanAnotherModalButton
-                  }
-                  onPress={
-                    resetScanner
-                  }
-                >
-                  <Text
-                    style={
-                      styles.scanAnotherModalText
-                    }
-                  >
-                    Scan another product
-                  </Text>
-                </Pressable>
-
-              </ScrollView>
+              </>
             ) : null}
-
           </View>
-
         </View>
       </Modal>
-
     </View>
   );
 }
-
 
 /* =========================================================
    HISTORY CARD
@@ -1474,75 +1361,49 @@ export default function ScanScreen() {
 function HistoryCard({
   item,
   expanded,
-  onPress,
+  onToggle,
 }: {
   item: ScanHistoryItem;
+
   expanded: boolean;
-  onPress: () => void;
+
+  onToggle:
+    () => void;
 }) {
-
-  const score =
-    item.compatibilityScore;
-
-  const scoreColor =
-    score == null
-      ? COLORS.mutedText
-      : score >= 80
-        ? COLORS.green
-        : score >= 60
-          ? COLORS.oxfordBlue
-          : COLORS.brown;
-
-  const scoreBackground =
-    score == null
-      ? '#F2F2EE'
-      : score >= 80
-        ? '#E9EEDC'
-        : score >= 60
-          ? '#E5EEFF'
-          : COLORS.lemonCream;
-
-
   return (
-    <View
+    <Pressable
       style={[
         styles.historyCard,
 
         expanded &&
           styles.historyCardExpanded,
       ]}
+      onPress={
+        onToggle
+      }
     >
-
-      {/* COLLAPSED HEADER */}
-
-      <Pressable
+      <View
         style={
-          styles.historyCardHeader
+          styles.historyCardTop
         }
-        onPress={onPress}
       >
-
         <View
           style={
             styles.historyProductIcon
           }
         >
-          <Ionicons
-            name="water-outline"
-            size={21}
-            color={
-              COLORS.oxfordBlue
+          <Text
+            style={
+              styles.historyProductEmoji
             }
-          />
+          >
+            🧴
+          </Text>
         </View>
 
-
         <View
-          style={
-            styles.historyProductInfo
-          }
+          style={{ flex: 1 }}
         >
-
           <Text
             style={
               styles.historyBrand
@@ -1550,54 +1411,56 @@ function HistoryCard({
             numberOfLines={1}
           >
             {item.brand ||
-              'Hair product'}
+              'Unknown brand'}
           </Text>
 
           <Text
             style={
               styles.historyProductName
             }
-            numberOfLines={1}
+            numberOfLines={
+              expanded
+                ? undefined
+                : 1
+            }
           >
-            {item.productName}
+            {
+              item.productName
+            }
           </Text>
 
           <Text
             style={
               styles.historyDate
             }
-            numberOfLines={1}
           >
-            {formatScanDate(
+            {formatHistoryDate(
               item.scannedAt
             )}
           </Text>
-
         </View>
 
-
-        <View
-          style={[
-            styles.historyScoreBadge,
-            {
-              backgroundColor:
-                scoreBackground,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.historyScoreText,
-              {
-                color:
-                  scoreColor,
-              },
-            ]}
+        {item.compatibilityScore !==
+        null &&
+        item.compatibilityScore !==
+          undefined ? (
+          <View
+            style={
+              styles.historyScore
+            }
           >
-            {score ?? '--'}%
-          </Text>
-        </View>
-
+            <Text
+              style={
+                styles.historyScoreText
+              }
+            >
+              {
+                item.compatibilityScore
+              }
+              %
+            </Text>
+          </View>
+        ) : null}
 
         <Ionicons
           name={
@@ -1605,53 +1468,29 @@ function HistoryCard({
               ? 'chevron-up'
               : 'chevron-down'
           }
-          size={19}
+          size={18}
           color={
-            COLORS.oxfordBlue
+            COLORS.mutedText
           }
         />
-
-      </Pressable>
-
-
-      {/* EXPANDED INFORMATION */}
+      </View>
 
       {expanded ? (
         <View
           style={
-            styles.expandedContent
+            styles.historyDetails
           }
         >
-
-          <View
-            style={
-              styles.expandedDivider
-            }
-          />
-
-
           {item.compatibilityLabel ? (
             <View
               style={
-                styles.expandedLabelRow
+                styles.historyLabelPill
               }
             >
               <Text
                 style={
-                  styles.expandedLabel
+                  styles.historyLabelText
                 }
-              >
-                Compatibility
-              </Text>
-
-              <Text
-                style={[
-                  styles.expandedValue,
-                  {
-                    color:
-                      scoreColor,
-                  },
-                ]}
               >
                 {
                   item.compatibilityLabel
@@ -1660,122 +1499,90 @@ function HistoryCard({
             </View>
           ) : null}
 
-
           <Text
             style={
-              styles.expandedSectionTitle
-            }
-          >
-            ManeLine says
-          </Text>
-
-          <Text
-            style={
-              styles.expandedSummary
+              styles.historySummary
             }
           >
             {item.summary}
           </Text>
 
-
           {item.matchReasons?.length ? (
             <>
               <Text
                 style={
-                  styles.expandedSectionTitle
+                  styles.historyDetailHeading
                 }
               >
                 Why it matched
               </Text>
 
               {item.matchReasons
-                .slice(0, 3)
+                .slice(
+                  0,
+                  3
+                )
                 .map(
                   (
                     reason,
                     index
                   ) => (
-                    <View
+                    <Text
                       key={`${reason}-${index}`}
                       style={
-                        styles.expandedBulletRow
+                        styles.historyDetailText
                       }
                     >
-                      <View
-                        style={
-                          styles.goodDot
-                        }
-                      />
-
-                      <Text
-                        style={
-                          styles.expandedBulletText
-                        }
-                      >
-                        {reason}
-                      </Text>
-                    </View>
+                      • {reason}
+                    </Text>
                   )
                 )}
             </>
           ) : null}
-
 
           {item.cautions?.length ? (
             <>
               <Text
                 style={
-                  styles.expandedSectionTitle
+                  styles.historyDetailHeading
                 }
               >
-                What to watch
+                Cautions
               </Text>
 
               {item.cautions
-                .slice(0, 2)
+                .slice(
+                  0,
+                  2
+                )
                 .map(
                   (
                     caution,
                     index
                   ) => (
-                    <View
+                    <Text
                       key={`${caution}-${index}`}
                       style={
-                        styles.expandedBulletRow
+                        styles.historyDetailText
                       }
                     >
-                      <Ionicons
-                        name="alert-circle-outline"
-                        size={16}
-                        color={
-                          COLORS.warning
-                        }
-                      />
-
-                      <Text
-                        style={
-                          styles.expandedBulletText
-                        }
-                      >
-                        {caution}
-                      </Text>
-                    </View>
+                      • {caution}
+                    </Text>
                   )
                 )}
             </>
           ) : null}
 
-
           <View
             style={
-              styles.ingredientCountRow
+              styles.ingredientCount
             }
           >
             <Ionicons
               name="flask-outline"
-              size={17}
+              size={14}
               color={
-                COLORS.oxfordBlue
+                COLORS.green
               }
             />
 
@@ -1786,64 +1593,50 @@ function HistoryCard({
             >
               {
                 item.ingredients
-                  ?.length || 0
+                  ?.length ??
+                0
               }{' '}
-              ingredients analyzed
+              ingredients saved
             </Text>
           </View>
-
-
-          {item.barcode ? (
-            <Text
-              style={
-                styles.barcodeText
-              }
-            >
-              Barcode: {item.barcode}
-            </Text>
-          ) : null}
-
         </View>
       ) : null}
-
-    </View>
+    </Pressable>
   );
 }
 
-
 /* =========================================================
-   DATE FORMATTER
+   DATE FORMAT
    ========================================================= */
 
-function formatScanDate(
-  dateString: string
+function formatHistoryDate(
+  value: string
 ) {
   const date =
-    new Date(dateString);
+    new Date(value);
 
   if (
     Number.isNaN(
       date.getTime()
     )
   ) {
-    return 'Recently scanned';
+    return '';
   }
 
-  return `${date.toLocaleDateString(
+  return date.toLocaleDateString(
     undefined,
     {
-      month: 'short',
-      day: 'numeric',
-    }
-  )} • ${date.toLocaleTimeString(
-    undefined,
-    {
-      hour: 'numeric',
-      minute: '2-digit',
-    }
-  )}`;
-}
+      month:
+        'short',
 
+      day:
+        'numeric',
+
+      year:
+        'numeric',
+    }
+  );
+}
 
 /* =========================================================
    STYLES
@@ -1851,319 +1644,820 @@ function formatScanDate(
 
 const styles =
   StyleSheet.create({
-
     screen: {
       flex: 1,
+
       backgroundColor:
         COLORS.background,
     },
 
+    centeredScreen: {
+      flex: 1,
 
-    content: {
-      paddingHorizontal: 20,
+      padding: 24,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      backgroundColor:
+        COLORS.background,
     },
 
+    content: {
+      paddingHorizontal:
+        20,
+    },
 
-    /* =====================================================
-       HEADER
-       ===================================================== */
+    /* HEADER */
 
     header: {
-      marginBottom: 20,
+      padding: 20,
+
+      marginBottom:
+        13,
+
+      borderRadius:
+        28,
+
+      backgroundColor:
+        COLORS.oxfordBlue,
     },
 
     eyebrow: {
-      fontSize: 11,
-      fontWeight: '900',
-      color: COLORS.green,
-      letterSpacing: 1.2,
+      fontSize: 10,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        1,
+
+      color:
+        COLORS.lemonCream,
     },
 
     title: {
-      marginTop: 5,
+      marginTop: 6,
+
+      maxWidth: 310,
+
       fontSize: 30,
+
       lineHeight: 35,
-      fontWeight: '900',
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -0.6,
+
       color:
-        COLORS.oxfordBlue,
-      letterSpacing: -0.7,
+        COLORS.white,
     },
 
     subtitle: {
-      marginTop: 7,
-      maxWidth: 340,
-      fontSize: 14,
+      marginTop: 8,
+
+      maxWidth: 330,
+
+      fontSize: 13,
+
       lineHeight: 20,
-      fontWeight: '600',
-      color: COLORS.mutedText,
+
+      color:
+        '#E7ECF4',
     },
 
+    /* VIEW SWITCHER */
 
-    /* =====================================================
-       SEGMENT CONTROL
-       ===================================================== */
+    viewSwitcher: {
+      marginBottom:
+        14,
 
-    segmentControl: {
       padding: 4,
-      marginBottom: 18,
-      borderRadius: 18,
+
+      borderRadius:
+        17,
+
+      flexDirection:
+        'row',
+
       backgroundColor:
-        COLORS.lemonCream,
-      flexDirection: 'row',
+        COLORS.white,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
     },
 
-    segmentButton: {
+    viewSwitchButton: {
       flex: 1,
-      minHeight: 44,
-      borderRadius: 14,
 
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
+      minHeight: 43,
 
-      gap: 7,
+      borderRadius:
+        13,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      gap: 6,
     },
 
-    segmentButtonActive: {
+    viewSwitchButtonActive: {
       backgroundColor:
         COLORS.oxfordBlue,
     },
 
-    segmentText: {
-      fontSize: 13,
-      fontWeight: '900',
+    viewSwitchText: {
+      fontSize: 11,
+
+      fontWeight:
+        '900',
+
       color:
         COLORS.oxfordBlue,
     },
 
-    segmentTextActive: {
-      color: COLORS.white,
-    },
-
-
-    /* =====================================================
-       CAMERA
-       ===================================================== */
-
-    cameraLoadingCard: {
-      height: 220,
-      borderRadius: 26,
-      backgroundColor:
-        COLORS.lemonCream,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-
-      gap: 10,
-    },
-
-    loadingLabel: {
+    viewSwitchTextActive: {
       color:
-        COLORS.oxfordBlue,
-      fontSize: 13,
-      fontWeight: '800',
+        COLORS.white,
     },
+
+    /* CAMERA */
 
     cameraWrap: {
-      height: 350,
-      borderRadius: 28,
-      overflow: 'hidden',
+      height: 360,
+
+      borderRadius:
+        28,
+
+      overflow:
+        'hidden',
+
+      position:
+        'relative',
 
       backgroundColor:
         COLORS.oxfordBlue,
-
-      position: 'relative',
     },
 
     camera: {
       flex: 1,
     },
 
-
-    /* =====================================================
-       SCAN FRAME
-       ===================================================== */
-
     scanFrame: {
-      position: 'absolute',
+      position:
+        'absolute',
 
       width: 230,
-      height: 145,
+
+      height: 150,
 
       left: '50%',
+
       top: '50%',
 
-      marginLeft: -115,
-      marginTop: -72.5,
+      marginLeft:
+        -115,
+
+      marginTop:
+        -75,
     },
 
     cornerTopLeft: {
-      position: 'absolute',
+      position:
+        'absolute',
+
       left: 0,
+
       top: 0,
 
-      width: 42,
-      height: 42,
+      width: 44,
 
-      borderTopWidth: 4,
-      borderLeftWidth: 4,
+      height: 44,
+
+      borderTopWidth:
+        5,
+
+      borderLeftWidth:
+        5,
 
       borderColor:
         COLORS.lemonCream,
 
-      borderTopLeftRadius: 13,
+      borderTopLeftRadius:
+        14,
     },
 
     cornerTopRight: {
-      position: 'absolute',
+      position:
+        'absolute',
+
       right: 0,
+
       top: 0,
 
-      width: 42,
-      height: 42,
+      width: 44,
 
-      borderTopWidth: 4,
-      borderRightWidth: 4,
+      height: 44,
+
+      borderTopWidth:
+        5,
+
+      borderRightWidth:
+        5,
 
       borderColor:
         COLORS.lemonCream,
 
-      borderTopRightRadius: 13,
+      borderTopRightRadius:
+        14,
     },
 
     cornerBottomLeft: {
-      position: 'absolute',
+      position:
+        'absolute',
+
       left: 0,
+
       bottom: 0,
 
-      width: 42,
-      height: 42,
+      width: 44,
 
-      borderBottomWidth: 4,
-      borderLeftWidth: 4,
+      height: 44,
+
+      borderBottomWidth:
+        5,
+
+      borderLeftWidth:
+        5,
 
       borderColor:
         COLORS.lemonCream,
 
-      borderBottomLeftRadius: 13,
+      borderBottomLeftRadius:
+        14,
     },
 
     cornerBottomRight: {
-      position: 'absolute',
+      position:
+        'absolute',
+
       right: 0,
+
       bottom: 0,
 
-      width: 42,
-      height: 42,
+      width: 44,
 
-      borderBottomWidth: 4,
-      borderRightWidth: 4,
+      height: 44,
+
+      borderBottomWidth:
+        5,
+
+      borderRightWidth:
+        5,
 
       borderColor:
         COLORS.lemonCream,
 
-      borderBottomRightRadius: 13,
+      borderBottomRightRadius:
+        14,
     },
 
-
-    /* =====================================================
-       LOOKUP
-       ===================================================== */
-
     lookupOverlay: {
-      position: 'absolute',
+      ...StyleSheet.absoluteFillObject,
 
-      left: 0,
-      right: 0,
-      bottom: 0,
+      padding: 30,
 
-      paddingHorizontal: 18,
-      paddingVertical: 16,
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
 
       backgroundColor:
-        'rgba(32,49,75,0.92)',
+        'rgba(32,49,75,0.86)',
+    },
 
-      flexDirection: 'row',
-      alignItems: 'center',
+    lookupTitle: {
+      marginTop: 11,
 
-      gap: 12,
+      fontSize: 15,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.white,
     },
 
     lookupText: {
-      fontSize: 14,
-      color: COLORS.white,
-      fontWeight: '900',
-    },
+      marginTop: 4,
 
-    lookupSubtext: {
-      marginTop: 2,
-      fontSize: 11,
-      color: '#DCE4EF',
-      fontWeight: '600',
-    },
+      maxWidth: 230,
 
+      textAlign:
+        'center',
 
-    /* =====================================================
-       SCAN HELP
-       ===================================================== */
+      fontSize: 10,
 
-    scanTip: {
-      marginTop: 11,
+      lineHeight: 15,
 
-      flexDirection: 'row',
-      alignItems: 'center',
-
-      gap: 8,
-
-      paddingHorizontal: 5,
+      color:
+        '#E7ECF4',
     },
 
     scanHelp: {
-      flex: 1,
+      marginTop: 12,
+
+      marginBottom:
+        16,
 
       fontSize: 12,
+
       lineHeight: 18,
 
       color:
         COLORS.mutedText,
     },
 
+    /* HISTORY */
 
-    /* =====================================================
-       PERMISSION
-       ===================================================== */
+    historySection: {
+      paddingBottom:
+        20,
+    },
 
-    permissionCard: {
+    historyHeader: {
+      marginBottom:
+        13,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'space-between',
+    },
+
+    historyEyebrow: {
+      fontSize: 9,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        0.9,
+
+      color:
+        COLORS.green,
+    },
+
+    historyTitle: {
+      marginTop: 2,
+
+      fontSize: 22,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    refreshHistoryButton: {
+      width: 39,
+
+      height: 39,
+
+      borderRadius:
+        13,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    historyLoading: {
+      paddingVertical:
+        40,
+
+      alignItems:
+        'center',
+
+      gap: 9,
+    },
+
+    historyLoadingText: {
+      fontSize: 11,
+
+      fontWeight:
+        '800',
+
+      color:
+        COLORS.mutedText,
+    },
+
+    historyList: {
+      gap: 8,
+    },
+
+    historyCard: {
+      padding: 12,
+
+      borderRadius:
+        17,
+
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+
+      backgroundColor:
+        COLORS.white,
+    },
+
+    historyCardExpanded: {
+      borderColor:
+        COLORS.lightBlue,
+    },
+
+    historyCardTop: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      gap: 9,
+    },
+
+    historyProductIcon: {
+      width: 40,
+
+      height: 40,
+
+      borderRadius:
+        13,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    historyProductEmoji: {
+      fontSize: 19,
+    },
+
+    historyBrand: {
+      fontSize: 9,
+
+      fontWeight:
+        '900',
+
+      textTransform:
+        'uppercase',
+
+      color:
+        COLORS.green,
+    },
+
+    historyProductName: {
+      marginTop: 2,
+
+      fontSize: 12,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    historyDate: {
+      marginTop: 2,
+
+      fontSize: 9,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    historyScore: {
+      minWidth: 45,
+
+      paddingHorizontal:
+        7,
+
+      paddingVertical:
+        6,
+
+      borderRadius:
+        10,
+
+      alignItems:
+        'center',
+
+      backgroundColor:
+        COLORS.lightBlue,
+    },
+
+    historyScoreText: {
+      fontSize: 11,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    historyDetails: {
+      marginTop: 12,
+
+      paddingTop: 12,
+
+      borderTopWidth:
+        1,
+
+      borderTopColor:
+        COLORS.lightBorder,
+    },
+
+    historyLabelPill: {
+      alignSelf:
+        'flex-start',
+
+      paddingHorizontal:
+        8,
+
+      paddingVertical:
+        5,
+
+      borderRadius:
+        999,
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    historyLabelText: {
+      fontSize: 9,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.green,
+    },
+
+    historySummary: {
+      marginTop: 9,
+
+      fontSize: 11,
+
+      lineHeight: 17,
+
+      color:
+        COLORS.brown,
+    },
+
+    historyDetailHeading: {
+      marginTop: 11,
+
+      marginBottom: 4,
+
+      fontSize: 10,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    historyDetailText: {
+      marginBottom: 3,
+
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    ingredientCount: {
+      marginTop: 11,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      gap: 5,
+    },
+
+    ingredientCountText: {
+      fontSize: 9,
+
+      fontWeight:
+        '800',
+
+      color:
+        COLORS.green,
+    },
+
+    emptyHistoryCard: {
+      padding: 25,
+
+      borderRadius:
+        22,
+
+      alignItems:
+        'center',
+
       backgroundColor:
         COLORS.white,
 
-      borderRadius: 26,
+      borderWidth: 1,
+
+      borderColor:
+        COLORS.lightBorder,
+    },
+
+    emptyHistoryIcon: {
+      width: 52,
+
+      height: 52,
+
+      borderRadius:
+        17,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    emptyHistoryTitle: {
+      marginTop: 11,
+
+      fontSize: 15,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    emptyHistoryText: {
+      marginTop: 4,
+
+      fontSize: 11,
+
+      color:
+        COLORS.mutedText,
+    },
+
+    emptyHistoryButton: {
+      marginTop: 14,
+
+      paddingHorizontal:
+        14,
+
+      paddingVertical:
+        10,
+
+      borderRadius:
+        13,
+
+      backgroundColor:
+        COLORS.oxfordBlue,
+    },
+
+    emptyHistoryButtonText: {
+      fontSize: 10,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.white,
+    },
+
+    /* GENERAL BUTTONS */
+
+    secondaryButton: {
+      minHeight: 46,
+
+      paddingHorizontal:
+        13,
+
+      borderRadius:
+        15,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      gap: 6,
+
+      backgroundColor:
+        COLORS.lemonCream,
+    },
+
+    secondaryButtonText: {
+      fontSize: 11,
+
+      fontWeight:
+        '900',
+
+      color:
+        COLORS.oxfordBlue,
+    },
+
+    /* PERMISSION */
+
+    permissionCard: {
+      width: '100%',
+
       padding: 24,
 
-      alignItems: 'center',
+      borderRadius:
+        28,
+
+      alignItems:
+        'center',
+
+      backgroundColor:
+        COLORS.white,
 
       borderWidth: 1,
+
       borderColor:
         COLORS.lightBorder,
     },
 
     permissionIcon: {
       width: 62,
+
       height: 62,
-      borderRadius: 20,
+
+      borderRadius:
+        20,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
 
       backgroundColor:
-        COLORS.lightBlue,
-
-      alignItems: 'center',
-      justifyContent: 'center',
+        COLORS.lemonCream,
     },
 
     permissionTitle: {
-      marginTop: 15,
+      marginTop: 12,
 
-      fontSize: 21,
-      fontWeight: '900',
+      fontSize: 20,
+
+      fontWeight:
+        '900',
 
       color:
         COLORS.oxfordBlue,
@@ -2172,809 +2466,213 @@ const styles =
     permissionText: {
       marginTop: 7,
 
-      maxWidth: 270,
+      textAlign:
+        'center',
 
-      fontSize: 14,
-      lineHeight: 20,
-
-      color:
-        COLORS.mutedText,
-
-      textAlign: 'center',
-    },
-
-    primaryButton: {
-      marginTop: 20,
-
-      minWidth: 210,
-
-      backgroundColor:
-        COLORS.oxfordBlue,
-
-      borderRadius: 18,
-
-      paddingHorizontal: 20,
-      paddingVertical: 14,
-
-      alignItems: 'center',
-    },
-
-    primaryButtonText: {
-      color: COLORS.white,
-
-      fontSize: 14,
-      fontWeight: '900',
-    },
-
-    viewRecentLink: {
-      marginTop: 15,
-      padding: 5,
-    },
-
-    viewRecentText: {
-      fontSize: 13,
-      fontWeight: '800',
-
-      color:
-        COLORS.green,
-    },
-
-
-    /* =====================================================
-       NOT FOUND
-       ===================================================== */
-
-    notFoundCard: {
-      marginTop: 18,
-
-      backgroundColor:
-        COLORS.white,
-
-      borderRadius: 24,
-
-      padding: 18,
-
-      borderWidth: 1,
-      borderColor:
-        COLORS.lightBorder,
-    },
-
-    notFoundIcon: {
-      width: 46,
-      height: 46,
-
-      borderRadius: 15,
-
-      backgroundColor:
-        COLORS.warningBackground,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    notFoundTitle: {
-      marginTop: 12,
-
-      fontSize: 19,
-      fontWeight: '900',
-
-      color:
-        COLORS.oxfordBlue,
-    },
-
-    notFoundText: {
-      marginTop: 6,
-
-      fontSize: 13,
-      lineHeight: 20,
-
-      color:
-        COLORS.mutedText,
-    },
-
-    ingredientButton: {
-      marginTop: 17,
-
-      backgroundColor:
-        COLORS.oxfordBlue,
-
-      borderRadius: 17,
-
-      paddingVertical: 13,
-
-      flexDirection: 'row',
-      justifyContent: 'center',
-      alignItems: 'center',
-
-      gap: 7,
-    },
-
-    ingredientButtonText: {
-      color:
-        COLORS.white,
-
-      fontSize: 13,
-      fontWeight: '900',
-    },
-
-    tryAgainButton: {
-      marginTop: 10,
-
-      paddingVertical: 11,
-
-      alignItems: 'center',
-    },
-
-    tryAgainButtonText: {
-      color:
-        COLORS.green,
-
-      fontSize: 13,
-      fontWeight: '900',
-    },
-
-    secondaryButton: {
-      marginTop: 15,
-
-      backgroundColor:
-        COLORS.oxfordBlue,
-
-      borderRadius: 17,
-
-      paddingVertical: 14,
-
-      alignItems: 'center',
-    },
-
-    secondaryButtonText: {
-      color:
-        COLORS.white,
-
-      fontSize: 14,
-      fontWeight: '900',
-    },
-
-
-    /* =====================================================
-       RECENT SCANS
-       ===================================================== */
-
-    recentSection: {
-      paddingBottom: 20,
-    },
-
-    recentHeader: {
-      marginBottom: 16,
-
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-
-    recentTitle: {
-      fontSize: 24,
-      fontWeight: '900',
-
-      color:
-        COLORS.oxfordBlue,
-    },
-
-    recentSubtitle: {
-      marginTop: 4,
-
-      fontSize: 13,
-      color:
-        COLORS.mutedText,
-    },
-
-    refreshButton: {
-      width: 40,
-      height: 40,
-
-      borderRadius: 14,
-
-      backgroundColor:
-        COLORS.lemonCream,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-
-    /* =====================================================
-       HISTORY CARD
-       ===================================================== */
-
-    historyCard: {
-      marginBottom: 10,
-
-      backgroundColor:
-        COLORS.white,
-
-      borderRadius: 19,
-
-      borderWidth: 1,
-      borderColor:
-        COLORS.lightBorder,
-
-      overflow: 'hidden',
-    },
-
-    historyCardExpanded: {
-      borderColor:
-        COLORS.lightBlue,
-    },
-
-    historyCardHeader: {
-      minHeight: 74,
-
-      paddingHorizontal: 13,
-      paddingVertical: 11,
-
-      flexDirection: 'row',
-      alignItems: 'center',
-
-      gap: 10,
-    },
-
-    historyProductIcon: {
-      width: 43,
-      height: 43,
-
-      borderRadius: 13,
-
-      backgroundColor:
-        COLORS.lemonCream,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    historyProductInfo: {
-      flex: 1,
-      minWidth: 0,
-    },
-
-    historyBrand: {
-      fontSize: 9,
-      fontWeight: '900',
-
-      color:
-        COLORS.green,
-
-      textTransform: 'uppercase',
-      letterSpacing: 0.7,
-    },
-
-    historyProductName: {
-      marginTop: 2,
-
-      fontSize: 14,
-      fontWeight: '900',
-
-      color:
-        COLORS.oxfordBlue,
-    },
-
-    historyDate: {
-      marginTop: 3,
-
-      fontSize: 10,
-
-      color:
-        COLORS.mutedText,
-    },
-
-    historyScoreBadge: {
-      minWidth: 52,
-
-      borderRadius: 999,
-
-      paddingHorizontal: 9,
-      paddingVertical: 7,
-
-      alignItems: 'center',
-    },
-
-    historyScoreText: {
-      fontSize: 12,
-      fontWeight: '900',
-    },
-
-
-    /* =====================================================
-       EXPANDED HISTORY
-       ===================================================== */
-
-    expandedContent: {
-      paddingHorizontal: 15,
-      paddingBottom: 17,
-    },
-
-    expandedDivider: {
-      height: 1,
-
-      marginBottom: 14,
-
-      backgroundColor:
-        '#ECE9DB',
-    },
-
-    expandedLabelRow: {
-      flexDirection: 'row',
-      justifyContent:
-        'space-between',
-
-      gap: 14,
-    },
-
-    expandedLabel: {
       fontSize: 12,
 
-      color:
-        COLORS.mutedText,
-    },
-
-    expandedValue: {
-      fontSize: 12,
-      fontWeight: '900',
-    },
-
-    expandedSectionTitle: {
-      marginTop: 16,
-
-      fontSize: 13,
-      fontWeight: '900',
-
-      color:
-        COLORS.oxfordBlue,
-    },
-
-    expandedSummary: {
-      marginTop: 5,
-
-      fontSize: 12,
-      lineHeight: 19,
-
-      color:
-        COLORS.mutedText,
-    },
-
-    expandedBulletRow: {
-      marginTop: 8,
-
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-
-      gap: 8,
-    },
-
-    goodDot: {
-      width: 7,
-      height: 7,
-
-      marginTop: 6,
-
-      borderRadius: 4,
-
-      backgroundColor:
-        COLORS.green,
-    },
-
-    expandedBulletText: {
-      flex: 1,
-
-      fontSize: 12,
       lineHeight: 18,
 
       color:
-        COLORS.brown,
-    },
-
-    ingredientCountRow: {
-      marginTop: 17,
-
-      padding: 11,
-
-      borderRadius: 14,
-
-      backgroundColor:
-        COLORS.lemonCream,
-
-      flexDirection: 'row',
-      alignItems: 'center',
-
-      gap: 8,
-    },
-
-    ingredientCountText: {
-      fontSize: 11,
-      fontWeight: '800',
-
-      color:
-        COLORS.oxfordBlue,
-    },
-
-    barcodeText: {
-      marginTop: 9,
-
-      fontSize: 10,
-
-      color:
         COLORS.mutedText,
     },
 
+    primaryButton: {
+      marginTop: 17,
 
-    /* =====================================================
-       HISTORY STATUS
-       ===================================================== */
+      paddingHorizontal:
+        17,
 
-    historyLoading: {
-      paddingVertical: 50,
+      paddingVertical:
+        13,
 
-      alignItems: 'center',
-      justifyContent: 'center',
+      borderRadius:
+        15,
 
-      gap: 10,
+      backgroundColor:
+        COLORS.oxfordBlue,
     },
 
-    historyLoadingText: {
+    primaryButtonText: {
       fontSize: 12,
 
-      color:
-        COLORS.mutedText,
-    },
+      fontWeight:
+        '900',
 
-    historyMessageCard: {
-      padding: 25,
-
-      borderRadius: 24,
-
-      backgroundColor:
-        COLORS.white,
-
-      borderWidth: 1,
-      borderColor:
-        COLORS.lightBorder,
-
-      alignItems: 'center',
-    },
-
-    emptyHistoryIcon: {
-      width: 60,
-      height: 60,
-
-      borderRadius: 20,
-
-      marginBottom: 13,
-
-      backgroundColor:
-        COLORS.lightBlue,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    historyMessageTitle: {
-      marginTop: 10,
-
-      fontSize: 18,
-      fontWeight: '900',
-
-      color:
-        COLORS.oxfordBlue,
-
-      textAlign: 'center',
-    },
-
-    historyMessageText: {
-      marginTop: 6,
-
-      fontSize: 13,
-      lineHeight: 19,
-
-      color:
-        COLORS.mutedText,
-
-      textAlign: 'center',
-    },
-
-    historyRetryText: {
-      marginTop: 14,
-
-      color:
-        COLORS.green,
-
-      fontSize: 13,
-      fontWeight: '900',
-    },
-
-    emptyScanButton: {
-      marginTop: 17,
-
-      borderRadius: 16,
-
-      backgroundColor:
-        COLORS.oxfordBlue,
-
-      paddingHorizontal: 18,
-      paddingVertical: 12,
-    },
-
-    emptyScanButtonText: {
       color:
         COLORS.white,
-
-      fontSize: 13,
-      fontWeight: '900',
     },
 
-
-    /* =====================================================
-       MODAL
-       ===================================================== */
+    /* RESULT MODAL */
 
     modalOverlay: {
       flex: 1,
 
-      backgroundColor:
-        'rgba(32,49,75,0.45)',
-
       justifyContent:
         'flex-end',
+
+      backgroundColor:
+        'rgba(32,49,75,0.45)',
     },
 
     modalCard: {
-      maxHeight: '87%',
+      maxHeight: '86%',
+
+      padding: 22,
+
+      borderTopLeftRadius:
+        30,
+
+      borderTopRightRadius:
+        30,
 
       backgroundColor:
         COLORS.background,
-
-      borderTopLeftRadius: 32,
-      borderTopRightRadius: 32,
-
-      paddingHorizontal: 22,
-      paddingBottom: 30,
-    },
-
-    modalHandle: {
-      width: 46,
-      height: 5,
-
-      marginTop: 10,
-      marginBottom: 10,
-
-      alignSelf: 'center',
-
-      borderRadius: 999,
-
-      backgroundColor:
-        '#D9D8CE',
     },
 
     modalHeader: {
-      flexDirection: 'row',
+      flexDirection:
+        'row',
 
-      alignItems: 'center',
+      alignItems:
+        'center',
+
       justifyContent:
         'space-between',
     },
 
-    modalProductIcon: {
-      width: 58,
-      height: 58,
-
-      borderRadius: 18,
-
-      backgroundColor:
-        COLORS.lemonCream,
-
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
     modalEmoji: {
-      fontSize: 31,
+      fontSize: 42,
     },
 
     modalBrand: {
-      marginTop: 14,
+      marginTop: 12,
 
-      fontSize: 11,
-      fontWeight: '900',
+      fontSize: 10,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        0.8,
+
+      textTransform:
+        'uppercase',
 
       color:
         COLORS.green,
-
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
     },
 
     modalTitle: {
       marginTop: 4,
 
       fontSize: 27,
+
       lineHeight: 32,
 
-      fontWeight: '900',
+      fontWeight:
+        '900',
 
       color:
         COLORS.oxfordBlue,
     },
 
-
-    /* =====================================================
-       MODAL SCORE
-       ===================================================== */
-
     modalScoreCard: {
-      marginTop: 15,
-
-      minHeight: 90,
-
-      borderRadius: 22,
+      marginTop: 14,
 
       padding: 17,
 
+      borderRadius:
+        23,
+
       backgroundColor:
         COLORS.oxfordBlue,
-
-      flexDirection: 'row',
-
-      alignItems: 'center',
-      justifyContent:
-        'space-between',
-    },
-
-    modalScoreEyebrow: {
-      fontSize: 10,
-      fontWeight: '900',
-
-      letterSpacing: 0.9,
-
-      color:
-        COLORS.lightBlue,
     },
 
     modalScore: {
-      fontSize: 38,
-      fontWeight: '900',
+      fontSize: 43,
+
+      fontWeight:
+        '900',
 
       color:
         COLORS.white,
     },
 
     modalScoreLabel: {
-      marginTop: 4,
+      marginTop: 2,
 
-      fontSize: 15,
-      fontWeight: '900',
+      fontWeight:
+        '900',
 
       color:
         COLORS.lemonCream,
     },
 
-
-    /* =====================================================
-       MODAL TEXT
-       ===================================================== */
-
     modalSectionTitle: {
-      marginTop: 19,
+      marginTop: 17,
+
       marginBottom: 6,
 
-      fontSize: 14,
-      fontWeight: '900',
+      fontSize: 13,
+
+      fontWeight:
+        '900',
 
       color:
         COLORS.oxfordBlue,
     },
 
     modalText: {
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 12,
+
+      lineHeight: 19,
 
       color:
         COLORS.mutedText,
     },
 
-    reasonRow: {
-      marginBottom: 7,
-
-      flexDirection: 'row',
-      alignItems:
-        'flex-start',
-
-      gap: 8,
-    },
-
-    reasonDot: {
-      width: 7,
-      height: 7,
-
-      marginTop: 7,
-
-      borderRadius: 4,
-
-      backgroundColor:
-        COLORS.green,
-    },
-
     bulletText: {
-      flex: 1,
+      marginBottom: 4,
 
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 12,
+
+      lineHeight: 19,
 
       color:
-        COLORS.brown,
+        COLORS.mutedText,
     },
 
-    cautionRow: {
-      marginBottom: 7,
+    historyButton: {
+      marginTop: 20,
 
-      flexDirection: 'row',
+      minHeight: 50,
+
+      borderRadius:
+        16,
+
+      flexDirection:
+        'row',
 
       alignItems:
-        'flex-start',
+        'center',
 
-      gap: 8,
-    },
-
-    cautionText: {
-      flex: 1,
-
-      fontSize: 13,
-      lineHeight: 20,
-
-      color:
-        COLORS.brown,
-    },
-
-
-    /* =====================================================
-       MODAL BUTTONS
-       ===================================================== */
-
-    recentButton: {
-      marginTop: 22,
-
-      backgroundColor:
-        COLORS.oxfordBlue,
-
-      borderRadius: 18,
-
-      paddingVertical: 15,
-
-      alignItems: 'center',
       justifyContent:
         'center',
 
-      flexDirection: 'row',
-
       gap: 8,
+
+      backgroundColor:
+        COLORS.green,
     },
 
-    recentButtonText: {
+    historyButtonText: {
+      fontSize: 13,
+
+      fontWeight:
+        '900',
+
       color:
         COLORS.white,
-
-      fontSize: 14,
-      fontWeight: '900',
     },
-
-    scanAnotherModalButton: {
-      paddingVertical: 15,
-
-      alignItems: 'center',
-    },
-
-    scanAnotherModalText: {
-      color:
-        COLORS.green,
-
-      fontSize: 13,
-      fontWeight: '900',
-    },
-
   });

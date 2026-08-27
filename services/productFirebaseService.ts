@@ -1,15 +1,48 @@
-import { db } from '../firebaseConfig';
+import { db, firebaseApp} from '../firebaseConfig';
 import { productCatalog } from '../data/productCatalog';
 import type {HairProduct,ProductCategory,} from '../types/product.types';
 import {collection,doc,getDoc,getDocs,limit,orderBy, query,serverTimestamp,setDoc,where,} from 'firebase/firestore';
 import { resolveRetailerIngredients } from './retailerIngredientService';
-import { findIngredientsWithGemini } from './geminiIngredientService';
 import { lookupInciBeautyProduct } from './inciBeautyService';
 import { lookupOpenBeautyFactsProduct } from './openBeautyFactsService';
 import { normalizeExternalProductToHairProduct } from './productNormalizerService';
 import {lookupUPCItemdb, type UpcItemProduct,} from './upcItemDbService';
-
+import { getFunctions,httpsCallable,} from 'firebase/functions';
+import {getOrCreateGuestUser,} from './authService';
 const PRODUCTS_COLLECTION = 'products';
+
+type SaveReviewedOcrProductRequest = {
+  barcode: string;
+
+  product: HairProduct;
+
+  ingredients: string[];
+
+  ingredientsText: string;
+};
+
+type SaveReviewedOcrProductResponse = {
+  saved: boolean;
+
+  cached: boolean;
+
+  product: HairProduct;
+};
+
+const functions =
+  getFunctions(
+    firebaseApp,
+    'us-central1'
+  );
+
+const saveReviewedOcrProductCallable =
+  httpsCallable<
+    SaveReviewedOcrProductRequest,
+    SaveReviewedOcrProductResponse
+  >(
+    functions,
+    'saveReviewedOcrProduct'
+  );
 const ENABLE_INCI_LOOKUP = false;
 
 function cleanBarcode(value: string) {
@@ -278,12 +311,70 @@ export async function saveProductToFirestore(product: HairProduct) {
 
   return product;
 }
+export async function saveReviewedOcrProduct(
+  args: {
+    barcode: string;
+    product: HairProduct;
+    ingredients: string[];
+    ingredientsText: string;
+  }
+): Promise<HairProduct> {
+  await getOrCreateGuestUser();
 
+  const cleanedBarcode =
+    cleanBarcode(args.barcode);
+
+  if (!cleanedBarcode) {
+    throw new Error(
+      'A barcode is required to cache an OCR product.'
+    );
+  }
+
+  if (args.ingredients.length === 0) {
+    throw new Error(
+      'Cannot save an OCR product without ingredients.'
+    );
+  }
+
+  console.log(
+    '[ManeLine OCR cache] Sending reviewed product to backend:',
+    {
+      barcode: cleanedBarcode,
+      productName: args.product.name,
+      ingredientCount:
+        args.ingredients.length,
+    }
+  );
+
+  const response =
+    await saveReviewedOcrProductCallable({
+      barcode: cleanedBarcode,
+      product: args.product,
+      ingredients: args.ingredients,
+      ingredientsText:
+        args.ingredientsText,
+    });
+
+  console.log(
+    '[ManeLine OCR cache] Backend result:',
+    {
+      saved: response.data.saved,
+      cached: response.data.cached,
+      barcode: cleanedBarcode,
+      ingredientCount:
+        response.data.product
+          .ingredients?.length ?? 0,
+    }
+  );
+
+  return response.data.product;
+}
 
 export async function getOrImportProductByBarcode(
   barcode: string
 ): Promise<HairProduct | null> {
-  const cleanedBarcode = cleanBarcode(barcode);
+  const cleanedBarcode =
+  cleanBarcode(barcode);
 
   if (!cleanedBarcode) {
     return null;
@@ -538,11 +629,8 @@ if (upcResult.rateLimited) {
   );
 
   // Continue to the label-scan fallback below.
-} else if (upcResult.found && upcResult.product) {
-  const upcProduct = upcResult.product;
+} 
 
-  // Continue with Gemini/product normalization here.
-}
 
 /*
  * Now narrow product from undefined.

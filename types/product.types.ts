@@ -116,6 +116,18 @@ export type HairProduct = {
   barcodes?: string[];
   description: string;
   ingredients: string[];
+  ingredientsText?: string;
+
+  ingredientSource?:
+    | 'verified_off'
+    | 'retailer_extracted'
+    | 'user_photo_ocr'
+    | 'manual_entry';
+
+  ingredientVerification?:
+    | 'verified_source'
+    | 'user_reviewed'
+    | 'unverified';
   sourceInfo?: ProductSourceInfo;
 
 

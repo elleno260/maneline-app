@@ -7,6 +7,7 @@ export default function RootLayout() {
       <Stack.Screen name="login" />
       <Stack.Screen name="hairProfileSetup" />
       <Stack.Screen name="editAvatar" />
+      <Stack.Screen name="scan-ingredients"/>
       <Stack.Screen name="review-scan" />
       <Stack.Screen name="(tabs)" />
     </Stack>

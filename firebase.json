@@ -12,8 +12,8 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run build"
-      ]
+        "cd \"$RESOURCE_DIR\" && ./node_modules/.bin/tsc"
+        ]
     }
   ]
 }
