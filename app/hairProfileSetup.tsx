@@ -119,10 +119,9 @@ export default function HairProfileSetupScreen() {
 
       if (!user) {
         Alert.alert(
-          'Sign in required',
-          'Please sign in before saving your hair profile.'
+          'Could not start ManeLine',
+          'Maneline could not create guest session. Please check your connection and try again.'
         );
-        router.replace('/login' as never);
         return;
       }
 

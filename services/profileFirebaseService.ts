@@ -2,6 +2,7 @@ import { db } from '../firebaseConfig';
 import {
   getCurrentUserEmail,
   getCurrentUserIdOrThrow,
+  getOrCreateGuestUser,
 } from '../services/authService';
 import { HairProfileForMatching } from '../types/product.types';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -14,13 +15,48 @@ export type RoutineStep = {
   note: string;
 };
 
+export type AvatarConfig = {
+  skinTone: string;
+  hairStyle: string;
+  hairColor: string;
+  backgroundColor: string;
+  accessory: string;
+};
+
 export type UserHairProfile = HairProfileForMatching & {
   displayName: string;
   email: string;
   routineCompatibilityScore: number;
   routineSteps: RoutineStep[];
+  avatar?: AvatarConfig;
 };
+export async function updateUserHairProfile(
+  updates: Partial<UserHairProfile>
+): Promise<void> {
+  const user =
+    await getOrCreateGuestUser();
 
+  const profileRef =
+    doc(
+      db,
+      'users',
+      user.uid,
+      'profile',
+      'main'
+    );
+
+  await setDoc(
+    profileRef,
+    {
+      ...updates,
+      updatedAt:
+        serverTimestamp(),
+    },
+    {
+      merge: true,
+    }
+  );
+}
 function getProfileRef(userId: string) {
   return doc(db, 'users', userId, 'profile', 'main');
 }

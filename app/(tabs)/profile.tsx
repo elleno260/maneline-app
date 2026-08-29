@@ -6,7 +6,7 @@ import type {
   Dispatch,
   SetStateAction,
 } from 'react';
-
+import {isGuestUser,logoutUser} from '../../services/authService';
 import {
   useCallback,
   useMemo,
@@ -390,6 +390,17 @@ export default function ProfileScreen() {
   ] =
     useState(true);
 
+  const [
+    isGuest,
+    setIsGuest,
+  ] = useState<boolean | null>(
+    null
+  );
+
+  const [
+    isLoggingOut,
+    setIsLoggingOut,
+  ] = useState(false);
   /* =======================================================
      LOAD
      ======================================================= */
@@ -405,6 +416,12 @@ useFocusEffect(
         await AsyncStorage.getItem(
           STORAGE_KEY
         );
+          const guest =
+            await isGuestUser();
+
+            setIsGuest(
+               guest
+                );
 
       if (!raw) {
         setProfile(
@@ -782,19 +799,38 @@ useFocusEffect(
               styles.headerTop
             }
           >
-            <View
-              style={styles.avatar}
-            >
-              <Text
-                style={
-                  styles.avatarText
-                }
-              >
-                {profile.displayName
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </Text>
-            </View>
+            <Pressable
+  style={styles.avatarAction}
+  onPress={() =>
+    router.push(
+      '/editAvatar' as never
+    )
+  }
+>
+  <View
+    style={
+      styles.avatar
+    }
+  >
+    <Text
+      style={
+        styles.avatarText
+      }
+    >
+      {profile.displayName
+        .slice(0, 1)
+        .toUpperCase()}
+    </Text>
+  </View>
+
+  <Text
+    style={
+      styles.avatarEditText
+    }
+  >
+    Edit Avatar
+  </Text>
+</Pressable>
 
             <View
               style={
@@ -841,7 +877,6 @@ useFocusEffect(
               />
             </Pressable>
           </View>
-
           {/* PROFILE STRENGTH */}
 
           <View
@@ -2629,7 +2664,21 @@ const styles =
 
       gap: 13,
     },
+avatarAction: {
+  alignItems: 'center',
+  justifyContent: 'center',
+},
 
+avatarEditText: {
+  marginTop: 5,
+
+  fontSize: 9,
+
+  fontWeight: '900',
+
+  color:
+    COLORS.oxfordBlue,
+},
     avatar: {
       width: 62,
 
