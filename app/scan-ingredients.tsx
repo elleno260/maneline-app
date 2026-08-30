@@ -6,19 +6,7 @@ import {ActivityIndicator,Pressable,StyleSheet,  Text,View,} from 'react-native'
 import { useSafeAreaInsets,} from 'react-native-safe-area-context';
 import {  recognizeTextFromImage,} from '../services/ocrService';
 import { saveOcrDraft,} from '../services/ocrDraftService';
-
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-  mutedText: '#6B7280',
-  danger: '#B91C1C',
-};
+import { COLORS,} from '../constants/colors';
 export default function ScanIngredientsScreen() {
   const insets =
     useSafeAreaInsets();

@@ -3,7 +3,7 @@ import {
   router,
   useFocusEffect,
 } from 'expo-router';
-
+import { COLORS} from '../constants/colors';
 import {
   useCallback,
   useState,
@@ -32,22 +32,6 @@ import type {
   AvatarConfig,
 } from '../services/profileFirebaseService';
 
-/* =========================================================
-   COLORS
-   ========================================================= */
-
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-  mutedText: '#6B7280',
-  lightBorder: '#E7E2CB',
-};
 
 /* =========================================================
    AVATAR OPTIONS

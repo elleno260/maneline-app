@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import { COLORS } from '../../constants/colors';
 import {
   PAGE_HORIZONTAL_PADDING,
   PAGE_TOP_PADDING,
@@ -23,18 +23,6 @@ import {
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-  mutedText: '#6B7280',
-  lightBorder: '#E7E2CB',
-  danger: '#B91C1C',
-};
 
 type RoutineStepType =
   | 'Pre-Poo'

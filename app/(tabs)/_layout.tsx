@@ -1,16 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-  background: '#FFFDF2',
-  inactive: '#8A8F98',
-  border: '#E7E2CB',
-};
+import { COLORS } from '../../constants/colors';
 
 export default function TabsLayout() {
   return (

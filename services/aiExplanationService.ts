@@ -6,7 +6,7 @@ import {
 } from '../types/product.types';
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 
-const ENABLE_GEMINI_EXPLANATIONS = false;
+const ENABLE_GEMINI_EXPLANATIONS = process.env.EXPO_PUBLIC_ENABLE_GEMINI_EXPLANATIONS === 'true';
 const AI_TIMEOUT_MS = 6000;
 
 function buildFallbackExplanation(

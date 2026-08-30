@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-
+import {COLORS} from '../constants/colors';
 import {
   ActivityIndicator,
   Alert,
@@ -28,24 +28,6 @@ import {
   getUserHairProfileOrNull,
   updateUserHairProfile,
 } from '../services/profileFirebaseService';
-
-/* =========================================================
-   COLORS
-   ========================================================= */
-
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-  mutedText: '#746B64',
-  border: '#E7E2CB',
-  inputBackground: '#FFFEF8',
-};
 
 /* =========================================================
    TYPES

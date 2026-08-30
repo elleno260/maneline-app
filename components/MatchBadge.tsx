@@ -26,11 +26,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   okayBadge: {
-    backgroundColor: COLORS.lemon,
+    backgroundColor: COLORS.lemonCream,
     borderColor: "#E1D67A",
   },
   text: {
-    color: COLORS.greenText,
+    color: COLORS.green,
     fontSize: 11,
     fontWeight: "700",
   },

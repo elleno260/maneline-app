@@ -1,7 +1,7 @@
 import {
   router,
 } from 'expo-router';
-
+import { COLORS } from '../constants/colors';
 import {
   useEffect,
   useState,
@@ -22,11 +22,7 @@ import {
   getUserHairProfileOrNull,
 } from '../services/profileFirebaseService';
 
-const COLORS = {
-  background: '#FFFDF2',
-  brown: '#3D2920',
-  oxfordBlue: '#20314B',
-};
+
 
 export default function Index() {
   const [

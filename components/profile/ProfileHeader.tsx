@@ -13,7 +13,7 @@ export default function ProfileHeader() {
         <Text style={styles.hairSummary}>{userProfile.hairSummary}</Text>
 
         <View style={styles.proBadge}>
-          <Ionicons name="star" size={14} color={COLORS.mutedBlue} />
+          <Ionicons name="star" size={14} color={COLORS.lightBlue} />
           <Text style={styles.proBadgeText}>{userProfile.membership}</Text>
         </View>
       </View>
@@ -24,7 +24,7 @@ export default function ProfileHeader() {
 const styles = StyleSheet.create({
   header: {
     height: 164,
-    backgroundColor: COLORS.navy,
+    backgroundColor: COLORS.oxfordBlue,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 35,
@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
     width: 82,
     height: 82,
     borderRadius: 41,
-    backgroundColor: COLORS.lightGray,
+    backgroundColor: COLORS.background,
     marginRight: 12,
   },
   profileInfo: {
@@ -48,13 +48,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   hairSummary: {
-    color: COLORS.mutedBlue,
+    color: COLORS.lightBlue,
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 6,
   },
   proBadge: {
-    backgroundColor: COLORS.navyLight,
+    backgroundColor: COLORS.lightBlue,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 3,
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   proBadgeText: {
-    color: COLORS.mutedBlue,
+    color: COLORS.lightBlue,
     fontSize: 12,
   },
 });

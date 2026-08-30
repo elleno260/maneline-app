@@ -14,28 +14,11 @@ import {
 } from 'react';import {Alert,Modal, Pressable,ScrollView,StyleSheet,Switch,Text,TextInput,View,} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {PAGE_HORIZONTAL_PADDING, PAGE_TOP_PADDING,TAB_BOTTOM_PADDING,} from '../../constants/layout';
+import { COLORS } from '../../constants/colors';
 
 type IconName =
   ComponentProps<typeof Ionicons>['name'];
 
-/* =========================================================
-   COLORS
-   ========================================================= */
-
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-
-  mutedText: '#6B7280',
-  lightBorder: '#E7E2CB',
-  danger: '#B91C1C',
-};
 
 /* =========================================================
    TYPES

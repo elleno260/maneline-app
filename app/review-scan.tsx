@@ -13,19 +13,7 @@ import {getOrImportProductByBarcode, saveReviewedOcrProduct,} from '../services/
 import {getUserHairProfileOrNull,} from '../services/profileFirebaseService';
 import { buildScanHistoryItem,  saveScanToFirebaseHistory,} from '../services/scanHistoryFirebaseService';
 import type {HairProduct,ProductCategory} from '../types/product.types';
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-
-  mutedText: '#6B7280',
-  lightBorder: '#E7E2CB',
-};
+import {COLORS} from '../constants/colors';
 
 export default function ReviewScanScreen() {
   const insets =

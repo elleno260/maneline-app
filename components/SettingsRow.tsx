@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dangerText: {
-    color: COLORS.red,
+    color: COLORS.danger,
   },
   pressedRow: {
     opacity: 0.6,

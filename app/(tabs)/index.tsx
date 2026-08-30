@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../constants/colors';
 
 import {
   PAGE_HORIZONTAL_PADDING,
@@ -58,29 +59,6 @@ type DiscoverProduct = {
   match: number;
   icon: IconName;
   backgroundColor: string;
-};
-
-/**
- * ManeLine Brand Palette
- *
- * PRD:
- * Lemon Cream  #FFF9C7
- * Brown        #3D2920
- * Light Blue   #95BFFF
- * Oxford Blue  #20314B
- * Green        #667D41
- */
-const COLORS = {
-  lemonCream: '#FFF9C7',
-  brown: '#3D2920',
-  lightBlue: '#95BFFF',
-  oxfordBlue: '#20314B',
-  green: '#667D41',
-
-  white: '#FFFFFF',
-  background: '#FFFDF2',
-  mutedText: '#6B7280',
-  lightBorder: '#E9E3C8',
 };
 
 const PROFILE_STORAGE_KEY = 'MANELINE_PROFILE_V1';

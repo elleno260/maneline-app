@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   card: {
     width: 128,
     height: 176,
-    backgroundColor: COLORS.lightGray,
+    backgroundColor: COLORS.background,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#C0C0C0",
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 12,
-    backgroundColor: COLORS.lightGray,
+    backgroundColor: COLORS.background,
   },
   info: {
     paddingHorizontal: 8,

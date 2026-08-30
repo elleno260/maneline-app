@@ -82,7 +82,7 @@ export const lookupInciProduct = onCall(
         'You must be signed in to look up products.'
       );
     }
-
+    
     const barcode = String(request.data?.barcode ?? '').trim();
 
     if (!barcode) {
