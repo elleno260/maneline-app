@@ -6,7 +6,10 @@ import {
   useEffect,
   useState,
 } from 'react';
-
+import {
+  initializeManeLineAppCheck,
+  verifyManeLineAppCheck,
+} from '../services/appCheckService';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -36,6 +39,11 @@ export default function Index() {
 
   async function checkStartupState() {
     try {
+      if (__DEV__) {
+  await verifyManeLineAppCheck();
+} else {
+  await initializeManeLineAppCheck();
+}
       /*
        * waitForAuthUser() ONLY checks whether
        * Firebase restored an existing session.

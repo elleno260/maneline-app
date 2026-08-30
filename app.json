@@ -6,13 +6,10 @@
     "scheme": "maneline",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-
     "plugins": [
       "expo-router",
-
       "@react-native-firebase/app",
       "@react-native-firebase/app-check",
-
       [
         "expo-build-properties",
         {
@@ -22,32 +19,31 @@
           }
         }
       ],
-
       "expo-font"
     ],
-
     "ios": {
       "googleServicesFile": "./GoogleService-Info.plist",
-
       "infoPlist": {
         "NSCameraUsageDescription": "ManeLine needs camera access to scan products and ingredient labels.",
         "NSPhotoLibraryUsageDescription": "ManeLine needs photo access so you can upload product label images."
       },
-
       "bundleIdentifier": "com.elleno260.manelineapp"
     },
-
     "android": {
       "googleServicesFile": "./google-services.json",
-
       "permissions": [
         "CAMERA",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "READ_MEDIA_IMAGES"
       ],
-
       "package": "com.elleno260.manelineapp"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c8b43f68-c046-4857-8556-c9c767a48466"
+      }
     }
   }
 }
