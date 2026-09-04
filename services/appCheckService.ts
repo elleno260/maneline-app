@@ -186,18 +186,33 @@ export async function verifyManeLineAppCheck():
         true
       );
 
-    const valid =
-      result.token.length >
-      0;
+    /*
+     * A real Firebase App Check token
+     * is a JWT:
+     *
+     * header.payload.signature
+     *
+     * A non-empty string alone is not
+     * enough to prove App Check worked.
+     */
+    const parts =
+      result.token.split('.');
+
+    const looksLikeJwt =
+      parts.length === 3 &&
+      parts.every(
+        (part) =>
+          part.length > 0
+      );
 
     console.log(
-      '[App Check] Verification:',
-      valid
-        ? 'PASSED'
-        : 'FAILED'
+      '[App Check] JS token:',
+      looksLikeJwt
+        ? 'VALID JWT FORMAT'
+        : 'INVALID / PLACEHOLDER TOKEN'
     );
 
-    return valid;
+    return looksLikeJwt;
   } catch (error) {
     console.error(
       '[App Check] Verification failed:',

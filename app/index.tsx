@@ -39,7 +39,7 @@ export default function Index() {
 
   async function checkStartupState() {
     try {
-      if (__DEV__) {
+  if (__DEV__) {
   await verifyManeLineAppCheck();
 } else {
   await initializeManeLineAppCheck();

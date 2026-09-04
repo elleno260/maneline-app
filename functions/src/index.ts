@@ -74,6 +74,7 @@ export const lookupInciProduct = onCall(
     region: 'us-central1',
     timeoutSeconds: 30,
     memory: '256MiB',
+    enforceAppCheck: true,
   },
   async (request): Promise<ExternalProductLookupResult> => {
     if (!request.auth) {
@@ -273,11 +274,19 @@ export const lookupUpcItemProduct = onCall(
     region: "us-central1",
     timeoutSeconds: 15,
     memory: "256MiB",
+    enforceAppCheck: true,
   },
+  
   async (request) => {
-    const candidates = getBarcodeCandidates(request.data?.barcode);
-    const requestedBarcode = candidates[0];
+  if (!request.auth) {
+    throw new HttpsError(
+      "unauthenticated",
+      "You must be signed in to look up product data."
+    );
+  }
 
+  const candidates = getBarcodeCandidates(request.data?.barcode);
+  const requestedBarcode = candidates[0];
     /*
      * Check Firestore first so repeated scans do not consume
      * additional UPCitemdb requests.

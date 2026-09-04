@@ -23,7 +23,7 @@ export const productCatalog: HairProduct[] = [
   tags: ['leave-in', 'moisture', 'type 4 hair'],
   recommendedForHairTypes: ['3C', '4A', '4B', '4C'],
   recommendedForPorosity: ['Low', 'Medium'],
-  recommendedForDensity: ['Fine', 'Medium', 'Thick'],
+  recommendedForDensity: ['Fine', 'Medium', 'Coarse'],
   recommendedForScalp: ['Dry', 'Balanced'],
   recommendedForGoals: ['Moisture', 'Length retention'],
   avoidIf: ['Glycerin sensitivity'],

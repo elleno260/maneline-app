@@ -139,7 +139,7 @@ const textureOptions = [
 const densityOptions = [
   'Thin',
   'Medium',
-  'Thick',
+  'Coarse',
 ];
 
 /*
@@ -285,7 +285,7 @@ const defaultProfile:
 
   texture: 'Fine',
 
-  density: 'Thick',
+  density: 'Coarse',
 
   scalp: 'Dry',
 

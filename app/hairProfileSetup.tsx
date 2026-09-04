@@ -18,7 +18,7 @@ import { saveUserHairProfile } from '../services/profileFirebaseService';
 
 const hairTypeOptions = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '3C', '4A', '4B', '4C'];
 const porosityOptions = ['Low', 'Medium', 'High', 'Unsure'];
-const densityOptions = ['Fine', 'Medium', 'Thick', 'Unsure'];
+const densityOptions = ['Fine', 'Medium', 'Coarse', 'Unsure'];
 const scalpOptions = ['Balanced', 'Dry', 'Oily', 'Sensitive', 'Flaky'];
 
 const goalOptions = [
@@ -99,7 +99,7 @@ export default function HairProfileSetupScreen() {
     if (!hairType || !porosity || !density || !scalp) {
       Alert.alert(
         'Missing information',
-        'Please complete your hair type, porosity, density, and scalp profile.'
+        'Please complete your hair type, porosity, strand thickness, and scalp profile.'
       );
       return;
     }
@@ -199,8 +199,8 @@ export default function HairProfileSetupScreen() {
         </Section>
 
         <Section
-          title="Density"
-          subtitle="This helps avoid product recommendations that may feel too heavy or too light."
+          title="Strand Thickness"
+          subtitle="How thick each individual strand feels. This helps ManeLine avoid products that may feel too heavy or too light for your hair."
         >
           <ChipGroup
             options={densityOptions}

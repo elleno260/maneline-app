@@ -1,10 +1,18 @@
 import {
-  getFunctions,
   httpsCallable,
 } from 'firebase/functions';
 
-import { firebaseApp } from '../firebaseConfig';
-import { getOrCreateGuestUser } from './authService';
+import {
+  firebaseApp,
+} from '../firebaseConfig';
+
+import {
+  getOrCreateGuestUser,
+} from './authService';
+
+import {
+  getProtectedFunctions,
+} from './protectedFunctionsService';
 
 export interface UpcItemProduct {
   barcode: string;
@@ -28,39 +36,66 @@ interface UpcLookupResponse {
   product?: UpcItemProduct;
 }
 
-const functions = getFunctions(
-  firebaseApp,
-  'us-central1'
-);
-
-const lookupUpcCallable = httpsCallable<
-  { barcode: string },
-  UpcLookupResponse
->(
-  functions,
-  'lookupUpcItemProduct'
-);
-
 export async function lookupUPCItemdb(
   barcode: string
 ): Promise<UpcLookupResponse> {
+  /*
+   * Firebase Auth first.
+   */
   await getOrCreateGuestUser();
 
-  const cleanBarcode = barcode.replace(/\D/g, '');
+  /*
+   * App Check must be initialized
+   * before obtaining the Functions
+   * service.
+   */
+  const functions =
+    await getProtectedFunctions();
 
-  console.log('[UPCitemdb] Calling function:', {
-    barcode: cleanBarcode,
-    projectId: firebaseApp.options.projectId,
-  });
+  const lookupUpcCallable =
+    httpsCallable<
+      {
+        barcode: string;
+      },
+      UpcLookupResponse
+    >(
+      functions,
+      'lookupUpcItemProduct'
+    );
+
+  const cleanBarcode =
+    barcode.replace(
+      /\D/g,
+      ''
+    );
+
+  console.log(
+    '[UPCitemdb] Calling function:',
+    {
+      barcode:
+        cleanBarcode,
+
+      projectId:
+        firebaseApp
+          .options
+          .projectId,
+    }
+  );
 
   try {
-    const response = await lookupUpcCallable({
-      barcode: cleanBarcode,
-    });
+    const response =
+      await lookupUpcCallable({
+        barcode:
+          cleanBarcode,
+      });
 
     console.log(
       '[UPCitemdb] Function response:',
-      JSON.stringify(response.data, null, 2)
+      JSON.stringify(
+        response.data,
+        null,
+        2
+      )
     );
 
     return response.data;

@@ -205,6 +205,9 @@ const style =
 const headCovering =
   profile.headCovering?.toLowerCase() ?? 'none';
 
+const chemicalHistory =
+  profile.chemicalHistory?.toLowerCase() ?? 'virgin';
+
 const ingredientText =
   product.ingredients
     .join(' ')
@@ -485,52 +488,62 @@ const ingredientText =
     profileFit -= 15;
 
     cautions.push(
-      'This formula appears rich and may feel heavy on some fine-density routines.'
+      'This formula appears rich and may feel heavy on some fine-strand routines.'
     );
   }
 
   if (
-    normalize(profile.density) ===
-      'thick' &&
-    emollients.length
-  ) {
-    profileFit += 8;
+  (
+    normalize(profile.density) === 'coarse' ||
+    normalize(profile.density) === 'thick'
+  ) &&
+  emollients.length
+) {
+  profileFit += 8;
 
-    reasons.push(
-      'The richer conditioning profile may suit a higher-density routine.'
-    );
-  }
+  reasons.push(
+    'The richer conditioning profile may suit coarser strands.'
+  );
+}
 
   /* -----------------------------------------------------
-     Scalp fit
-  ----------------------------------------------------- */
+   Scalp fit
 
-  if (
-    normalize(profile.scalp) ===
-    'sensitive'
-  ) {
-    if (fragrance.length) {
-      profileFit -= 12;
+   General scalp characteristics can influence
+   compatibility directly.
 
-      cautions.push(
-        'This formula contains fragrance-related ingredients, which may be worth noting for a sensitive scalp.'
-      );
-    }
+   Condition-related selections are handled more
+   conservatively so ManeLine does not imply that a
+   cosmetic product treats a medical scalp condition.
+----------------------------------------------------- */
 
-    if (strongCleansers.length) {
-      profileFit -= 10;
+const scalpType =
+  normalize(profile.scalp);
 
-      cautions.push(
-        'This product contains a stronger cleansing surfactant and may not suit every sensitive-scalp routine.'
-      );
-    }
+/* Sensitive scalp */
+
+if (scalpType === 'sensitive') {
+  if (fragrance.length) {
+    profileFit -= 12;
+
+    cautions.push(
+      'This formula contains fragrance-related ingredients, which may be worth noting for a sensitive scalp.'
+    );
   }
 
-  if (
-    normalize(profile.scalp) ===
-      'dry' &&
-    strongCleansers.length
-  ) {
+  if (strongCleansers.length) {
+    profileFit -= 10;
+
+    cautions.push(
+      'This product contains a stronger cleansing surfactant and may not suit every sensitive-scalp routine.'
+    );
+  }
+}
+
+/* Dry scalp */
+
+if (scalpType === 'dry') {
+  if (strongCleansers.length) {
     profileFit -= 8;
 
     cautions.push(
@@ -538,17 +551,215 @@ const ingredientText =
     );
   }
 
+  if (emollients.length) {
+    profileFit += 5;
+
+    reasons.push(
+      'The conditioning profile may fit a routine focused on scalp and hair dryness.'
+    );
+  }
+}
+
+/* Oily scalp */
+
+if (scalpType === 'oily') {
   if (
-    normalize(profile.scalp) ===
-      'oily' &&
-    (
-      gentleCleansers.length ||
-      strongCleansers.length
-    )
+    gentleCleansers.length ||
+    strongCleansers.length
   ) {
     profileFit += 6;
+
+    reasons.push(
+      'The cleansing system may fit a routine focused on removing excess oil and buildup.'
+    );
   }
 
+  if (heavyEmollients.length >= 2) {
+    profileFit -= 5;
+
+    cautions.push(
+      'This formula appears relatively rich, which may feel heavy for some oily-scalp routines.'
+    );
+  }
+}
+
+/* Flaky scalp */
+
+if (scalpType === 'flaky') {
+  if (gentleCleansers.length) {
+    profileFit += 4;
+
+    reasons.push(
+      'The cleansing profile may fit a routine that includes regular scalp cleansing.'
+    );
+  }
+
+  if (fragrance.length) {
+    profileFit -= 6;
+
+    cautions.push(
+      'Fragrance-related ingredients may be worth noting when your scalp is already prone to flaking or irritation.'
+    );
+  }
+}
+
+/* -----------------------------------------------------
+   Condition-related scalp selections
+
+   These selections should NOT create treatment claims
+   or automatic positive compatibility bonuses.
+----------------------------------------------------- */
+
+const conditionRelatedScalpTypes = [
+  'dandruff-prone',
+  'seborrheic dermatitis',
+  'psoriasis',
+  'eczema',
+  'scalp acne',
+];
+
+if (
+  conditionRelatedScalpTypes.includes(
+    scalpType
+  )
+) {
+  if (fragrance.length) {
+    profileFit -= 5;
+
+    cautions.push(
+      'Because you noted a scalp condition or concern, fragrance-related ingredients may be worth reviewing carefully.'
+    );
+  }
+
+  if (strongCleansers.length) {
+    cautions.push(
+      'This formula contains a stronger cleansing system. ManeLine is evaluating cosmetic compatibility only and is not assessing treatment suitability for your scalp condition.'
+    );
+  }
+}
+
+/* -----------------------------------------------------
+   Hair-loss / edge-related scalp concerns
+
+   Do not award compatibility points based on ingredients
+   that are commonly marketed for growth.
+----------------------------------------------------- */
+
+if (
+  scalpType === 'thinning edges' ||
+  scalpType === 'ccca'
+) {
+  cautions.push(
+    'ManeLine can evaluate ingredient and routine compatibility, but this score does not indicate that the product treats thinning or hair-loss-related scalp concerns.'
+  );
+}
+/* -----------------------------------------------------
+   Chemical history fit
+
+   Chemical history changes how we interpret
+   cleansing strength, conditioning support, and
+   product role. These are modest adjustments rather
+   than absolute rules.
+----------------------------------------------------- */
+
+if (chemicalHistory === 'colored') {
+  if (strongCleansers.length) {
+    profileFit -= 7;
+
+    cautions.push(
+      'A stronger cleansing system may be worth considering for color-treated hair, especially if preserving color is a priority.'
+    );
+  }
+
+  if (emollients.length) {
+    profileFit += 5;
+
+    reasons.push(
+      'The conditioning ingredients may support the moisture needs of color-treated hair.'
+    );
+  }
+
+  if (
+    product.category
+      ?.toLowerCase()
+      .includes('color')
+  ) {
+    profileFit += 7;
+
+    reasons.push(
+      'This product is positioned for color-care routines, which aligns with your chemical history.'
+    );
+  }
+}
+
+if (chemicalHistory === 'relaxed') {
+  if (emollients.length) {
+    profileFit += 6;
+
+    reasons.push(
+      'The conditioning profile may be useful in a routine for chemically relaxed hair.'
+    );
+  }
+
+  if (strongCleansers.length) {
+    profileFit -= 6;
+
+    cautions.push(
+      'The stronger cleansing system may be worth balancing with conditioning steps in a relaxed-hair routine.'
+    );
+  }
+}
+
+if (chemicalHistory === 'transitioning') {
+  if (emollients.length) {
+    profileFit += 6;
+
+    reasons.push(
+      'The conditioning profile may help support a routine managing multiple hair textures while transitioning.'
+    );
+  }
+
+  if (
+    product.category === 'Deep Conditioner' ||
+    product.category === 'Conditioner'
+  ) {
+    profileFit += 5;
+
+    reasons.push(
+      'Conditioning products can fit well into a transitioning-hair routine where moisture and manageability are important.'
+    );
+  }
+}
+
+if (chemicalHistory === 'heat damaged') {
+  if (emollients.length) {
+    profileFit += 7;
+
+    reasons.push(
+      'The conditioning ingredients may support a routine focused on hair affected by frequent heat exposure.'
+    );
+  }
+
+  if (
+    product.category
+      ?.toLowerCase()
+      .includes('heat')
+  ) {
+    profileFit += 8;
+
+    reasons.push(
+      'This product type aligns with a routine focused on reducing additional heat-related stress.'
+    );
+  }
+
+  if (strongCleansers.length) {
+    profileFit -= 5;
+
+    cautions.push(
+      'A stronger cleansing system may need to be balanced with conditioning in a heat-damage-focused routine.'
+    );
+  }
+}
   /* -----------------------------------------------------
      Existing curated metadata
 
@@ -724,7 +935,7 @@ if (style === 'braids') {
     product.category === 'Scalp Care' ||
     product.category === 'Oil'
   ) {
-    profileFit += 6;
+    routineFitScore += 6;
 
     reasons.push(
       'This product can fit a braid-focused scalp routine.'
@@ -735,7 +946,7 @@ if (style === 'braids') {
     ingredientText.includes('petrolatum') ||
     ingredientText.includes('mineral oil')
   ) {
-    profileFit -= 5;
+    routineFitScore -= 5;
 
     cautions.push(
       'This formula may feel heavier in a braid routine where buildup is harder to remove frequently.'
@@ -747,7 +958,7 @@ if (style === 'locs') {
     product.category === 'Scalp Care' ||
     product.category === 'Shampoo'
   ) {
-    profileFit += 7;
+    routineFitScore += 7;
 
     reasons.push(
       'This product type aligns with scalp care and cleansing needs in a loc routine.'
@@ -758,7 +969,7 @@ if (style === 'locs') {
     product.category === 'Cream' ||
     product.category === 'Deep Conditioner'
   ) {
-    profileFit -= 4;
+    routineFitScore -= 4;
 
     cautions.push(
       'Rich formulas may require extra attention to residue and buildup in a loc routine.'
@@ -771,7 +982,7 @@ if (style === 'sew-in / wig') {
     product.category === 'Scalp Care' ||
     product.category === 'Shampoo'
   ) {
-    profileFit += 8;
+    routineFitScore += 8;
 
     reasons.push(
       'Scalp-focused products are especially relevant while much of the hair is less accessible.'
@@ -782,7 +993,7 @@ if (style === 'sew-in / wig') {
     product.category === 'Cream' ||
     product.category === 'Styler'
   ) {
-    profileFit -= 3;
+    routineFitScore -= 3;
 
     cautions.push(
       'A length-focused styling product may be less useful while your hair is under a sew-in or wig.'
@@ -795,7 +1006,7 @@ if (headCovering !== 'none') {
     product.category === 'Scalp Care' ||
     product.category === 'Shampoo'
   ) {
-    profileFit += 5;
+    routineFitScore += 5;
 
     reasons.push(
       'This product supports a scalp-focused routine when your hair is covered regularly.'
@@ -806,7 +1017,7 @@ if (headCovering !== 'none') {
     ingredientText.includes('petrolatum') ||
     ingredientText.includes('mineral oil')
   ) {
-    profileFit -= 4;
+    routineFitScore -= 4;
 
     cautions.push(
       'A heavier formula may contribute to a coated feel when wash cycles are longer.'

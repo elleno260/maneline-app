@@ -80,10 +80,10 @@ function recommendedDensityFromIngredients(
   );
 
   if (hasHeavyIngredient) {
-    return ['Medium', 'Thick', 'Unsure'];
+    return ['Medium', 'Coarse', 'Unsure'];
   }
 
-  return ['Fine', 'Medium', 'Thick', 'Unsure'];
+  return ['Fine', 'Medium', 'Coarse', 'Unsure'];
 }
 
 function recommendedScalpFromCategory(category: string): ScalpType[] {

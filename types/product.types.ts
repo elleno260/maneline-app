@@ -57,7 +57,7 @@ export type HeadCovering =
 
 export type Porosity = 'Low' | 'Medium' | 'High' | 'Unsure';
 
-export type Density = 'Fine' | 'Medium' | 'Thick' | 'Unsure';
+export type Density = 'Fine' | 'Medium' | 'Coarse' | 'Unsure';
 
 //export type ScalpType = 'Balanced' | 'Dry' | 'Oily' | 'Sensitive' | 'Flaky';
 

@@ -7,8 +7,9 @@ import { lookupInciBeautyProduct } from './inciBeautyService';
 import { lookupOpenBeautyFactsProduct } from './openBeautyFactsService';
 import { normalizeExternalProductToHairProduct } from './productNormalizerService';
 import {lookupUPCItemdb, type UpcItemProduct,} from './upcItemDbService';
-import { getFunctions,httpsCallable,} from 'firebase/functions';
+import { httpsCallable,} from 'firebase/functions';
 import {getOrCreateGuestUser,} from './authService';
+import {getProtectedFunctions,} from './protectedFunctionsService';
 const PRODUCTS_COLLECTION = 'products';
 
 type SaveReviewedOcrProductRequest = {
@@ -29,20 +30,7 @@ type SaveReviewedOcrProductResponse = {
   product: HairProduct;
 };
 
-const functions =
-  getFunctions(
-    firebaseApp,
-    'us-central1'
-  );
 
-const saveReviewedOcrProductCallable =
-  httpsCallable<
-    SaveReviewedOcrProductRequest,
-    SaveReviewedOcrProductResponse
-  >(
-    functions,
-    'saveReviewedOcrProduct'
-  );
 const ENABLE_INCI_LOOKUP = false;
 
 function cleanBarcode(value: string) {
@@ -345,7 +333,18 @@ export async function saveReviewedOcrProduct(
         args.ingredients.length,
     }
   );
+  const functions =
+  await getProtectedFunctions();
 
+const saveReviewedOcrProductCallable =
+  httpsCallable<
+    SaveReviewedOcrProductRequest,
+    SaveReviewedOcrProductResponse
+  >(
+    functions,
+    'saveReviewedOcrProduct'
+  );
+  
   const response =
     await saveReviewedOcrProductCallable({
       barcode: cleanedBarcode,
